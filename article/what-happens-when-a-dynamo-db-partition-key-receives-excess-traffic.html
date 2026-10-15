@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What Happens When a DynamoDB Partition Key Receives Excess Traffic? - dynamodb</title>
+    <meta name="description" content="When a single partition key in Amazon DynamoDB receives a disproportionately high volume of read or write requests, it creates a scenario known as a &quot;hot partition&quot; or &quot;hot key.&quot; DynamoDB distributes database workload and storage across multiple physical">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/what-happens-when-a-dynamo-db-partition-key-receives-excess-traffic">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What Happens When a DynamoDB Partition Key Receives Excess Traffic? - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/what-happens-when-a-dynamo-db-partition-key-receives-excess-traffic" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When a single partition key in Amazon DynamoDB receives a disproportionately high volume of read or write requests, it creates a scenario known as a &quot;hot partition&quot; or &quot;hot key.&quot; DynamoDB distributes database workload and storage across multiple physical" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="what-happens-when-a-dynamodb-partition-key-receives-excess-traffic">What
+Happens When a DynamoDB Partition Key Receives Excess Traffic?</h1>
+<p>When a single partition key in Amazon DynamoDB receives a
+disproportionately high volume of read or write requests, it creates a
+scenario known as a "hot partition" or "hot key." DynamoDB distributes
+database workload and storage across multiple physical partitions based
+on the hash value of the partition key. Because the throughput
+provisioned for a table (or allocated automatically via auto-scaling) is
+distributed across all physical partitions, concentrated traffic on a
+single key can overwhelm the specific partition hosting that key,
+leading to performance bottlenecks and application-level errors.</p>
+<h2 id="the-dynamics-of-partition-allocation">The Dynamics of Partition
+Allocation</h2>
+<p>DynamoDB manages capacity by splitting data into separate storage
+partitions. Each partition has strict physical limits, supporting a
+maximum of 1,000 write capacity units (WCUs), 3,000 read capacity units
+(RCUs), or a combination thereof, up to a total storage cap of 10
+GB.</p>
+<p>When you allocate throughput to a table, DynamoDB divides that
+capacity across the underlying partitions. If your workload generates
+traffic evenly across millions of distinct partition keys, performance
+remains steady. However, if traffic concentrates on one partition key,
+that single key cannot exceed the single partition's maximum capacity
+limits, regardless of how much total capacity is provisioned for the
+entire table.</p>
+<h2 id="primary-consequences-of-excess-traffic">Primary Consequences of
+Excess Traffic</h2>
+<p>When requests to a single partition key exceed allowed limits,
+several distinct issues occur:</p>
+<ul>
+<li><strong>Throughput Exceeded Exceptions:</strong> DynamoDB rejects
+excess requests and returns a
+<code>ProvisionedThroughputExceededException</code> to the client
+application.</li>
+<li><strong>Request Throttling:</strong> Reads and writes directed at
+the hot partition are throttled, introducing retry latency or outright
+transaction failures for application users.</li>
+<li><strong>Unbalanced Partition Splitting:</strong> As storage or
+throughput demand grows, DynamoDB may split the partition into smaller
+chunks. If the heavy traffic is driven by a single key, splitting the
+partition does not solve the issue, as all traffic for that key still
+routes to one physical partition.</li>
+<li><strong>Impact on Global Secondary Indexes (GSIs):</strong> If the
+hot item is replicated to a Global Secondary Index with a similar key
+structure, throttling on the GSI will backpressure and throttle writes
+on the base table as well.</li>
+</ul>
+<h2 id="mitigation-strategies-for-hot-partition-keys">Mitigation
+Strategies for Hot Partition Keys</h2>
+<p>Resolving hot key issues requires altering how data is distributed or
+changing how frequent access patterns interact with the database.</p>
+<h3 id="1-partition-key-write-sharding">1. Partition Key Write
+Sharding</h3>
+<p>Add a random or calculated suffix to the partition key value (for
+example, appending a random number between 1 and 10, such as
+<code>USER_1234_1</code>). This spreads the writes across multiple
+distinct physical partitions. When reading the data, the application
+queries all sharded keys and aggregates the results.</p>
+<h3 id="2-caching-layer-integration">2. Caching Layer Integration</h3>
+<p>For read-heavy workloads, implement Amazon DynamoDB Accelerator (DAX)
+or an in-memory caching system like Redis/Memcached. Caching offloads
+repetitive read requests for popular keys away from DynamoDB
+entirely.</p>
+<h3 id="3-combining-attributes">3. Combining Attributes</h3>
+<p>Create composite partition keys by combining multiple values (such as
+<code>Date#TenantID#UserID</code>). This increases key cardinality and
+ensures traffic splits evenly across the database infrastructure.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/dynamodb'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

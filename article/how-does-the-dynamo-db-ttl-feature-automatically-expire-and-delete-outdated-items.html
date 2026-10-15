@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Does the DynamoDB TTL Feature Automatically Expire and Delete Outdated Items? - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Time to Live (TTL) is an automated, zero-cost data lifecycle management feature that identifies and purges expired items from your tables without consuming provisioned read or write throughput. It works by monitoring a user-defined attribu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-does-the-dynamo-db-ttl-feature-automatically-expire-and-delete-outdated-items">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How Does the DynamoDB TTL Feature Automatically Expire and Delete Outdated Items? - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-does-the-dynamo-db-ttl-feature-automatically-expire-and-delete-outdated-items" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Time to Live (TTL) is an automated, zero-cost data lifecycle management feature that identifies and purges expired items from your tables without consuming provisioned read or write throughput. It works by monitoring a user-defined attribu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="how-does-the-dynamodb-ttl-feature-automatically-expire-and-delete-outdated-items">How
+Does the DynamoDB TTL Feature Automatically Expire and Delete Outdated
+Items?</h1>
+<p>Amazon DynamoDB Time to Live (TTL) is an automated, zero-cost data
+lifecycle management feature that identifies and purges expired items
+from your tables without consuming provisioned read or write throughput.
+It works by monitoring a user-defined attribute on each item that
+contains a timestamp. A dedicated background process continually
+evaluates these timestamps against the current time, marking and
+deleting items that have passed their expiration date.</p>
+<h2 id="defining-the-expire-attribute">Defining the Expire
+Attribute</h2>
+<p>To use TTL, you must designate a specific attribute name on your
+table to store the expiration timestamp. This attribute must meet strict
+criteria:</p>
+<ul>
+<li><strong>Data Type:</strong> The attribute must be stored as a
+<strong>Number</strong> data type. String or binary attributes are
+ignored by the TTL mechanism.</li>
+<li><strong>Format:</strong> The timestamp must be formatted in
+<strong>Unix epoch time in seconds</strong> (for example,
+<code>1700000000</code>). Storing timestamps in milliseconds will
+prevent the item from expiring as intended.</li>
+<li><strong>Range Validation:</strong> DynamoDB ignores TTL attributes
+with timestamps that are more than five years in the past to prevent
+accidental mass deletions due to data entry errors.</li>
+</ul>
+<p>If an item lacks the designated TTL attribute, DynamoDB simply
+retains the item indefinitely until it is manually updated or
+deleted.</p>
+<h2 id="the-automatic-deletion-mechanism">The Automatic Deletion
+Mechanism</h2>
+<p>The TTL operation runs asynchronously in the background and is
+completely decoupled from your application's normal traffic. It follows
+a two-step lifecycle:</p>
+<h3 id="expiration-vs-deletion">Expiration vs. Deletion</h3>
+<p>An item reaches its expiration point as soon as the current Unix
+system time exceeds the timestamp value stored in its TTL attribute.
+However, expiration does not instantly remove the item from the
+database.</p>
+<p>DynamoDB uses an internal scanner to sweep table partitions and
+remove items marked for expiration. Physical deletion typically occurs
+within <strong>48 hours</strong> of expiration, depending on table size
+and overall system workload.</p>
+<h3 id="system-impact-and-throughput">System Impact and Throughput</h3>
+<p>Because the deletion process runs as a system background task:</p>
+<ul>
+<li>It <strong>does not consume Read Capacity Units (RCUs) or Write
+Capacity Units (WCUs)</strong> from your table provisioned limits.</li>
+<li>It <strong>does not impact read/write request latency</strong> or
+throughput available to your workload.</li>
+<li>Deletions automatically clear up storage space, reducing overall
+table storage costs.</li>
+</ul>
+<h2 id="handling-pending-deletions-in-your-application">Handling Pending
+Deletions in Your Application</h2>
+<p>Because there can be a delay between when an item expires and when
+the background scanner physically removes it, expired items can still
+appear in <code>GetItem</code>, <code>Query</code>, or <code>Scan</code>
+requests.</p>
+<p>To ensure strict application correctness, you should include logic in
+your application layer:</p>
+<ol type="1">
+<li><strong>Client-Side Filtering:</strong> Check the TTL timestamp in
+your application code after retrieving an item to ensure it is still
+valid before processing.</li>
+<li><strong>Filter Expressions:</strong> Use a
+<code>FilterExpression</code> in your <code>Query</code> or
+<code>Scan</code> operations to exclude items where the TTL attribute is
+less than or equal to the current Unix time.</li>
+</ol>
+<h2 id="tracking-ttl-deletions-via-dynamodb-streams">Tracking TTL
+Deletions via DynamoDB Streams</h2>
+<p>When TTL background workers delete an item, DynamoDB logs the
+operation to DynamoDB Streams if the stream feature is enabled on the
+table.</p>
+<p>The resulting stream record contains a <code>userIdentity</code>
+field identifying the deletion as a system action rather than a user API
+call:</p>
+<ul>
+<li><code>userIdentity.type</code>: <code>"Service"</code></li>
+<li><code>userIdentity.principalId</code>:
+<code>"dynamodb.amazonaws.com"</code></li>
+</ul>
+<p>This stream integration makes TTL useful for archiving expired
+data—such as sending deleted session records or logs directly to AWS
+Lambda or Amazon S3 before permanent removal.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/dynamodb'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

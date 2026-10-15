@@ -1,0 +1,62 @@
+[
+  [
+    10,
+    "Why Is DynamoDB a Fully Managed NoSQL Database?",
+    "Amazon DynamoDB is considered a fully managed NoSQL database service because AWS handles all the operational overhead of running, scaling, and maintaining a distributed database. Users do not need to provision, configure, or patch hardware or software, no",
+    false
+  ],
+  [
+    9,
+    "What is the Difference Between DynamoDB GSI and LSI?",
+    "DynamoDB provides two types of secondary indexes—Global Secondary Indexes (GSIs) and Local Secondary Indexes (LSIs)—to allow flexible querying on non-key attributes. The fundamental difference lies in their partition key structure and scope: an LSI shares",
+    false
+  ],
+  [
+    8,
+    "How Does DynamoDB Manage Automatic Partition Scaling?",
+    "Amazon DynamoDB manages automatic partition scaling through a process called partition splitting, where it dynamically divides physical storage units to accommodate growing data volumes and throughput demands without disrupting application performance. As",
+    false
+  ],
+  [
+    7,
+    "When to Use DynamoDB Secondary Indexes vs Primary Keys?",
+    "DynamoDB primary keys uniquely identify items and provide the most efficient, cost-effective access pattern for single-item lookups or query operations within a specific partition. However, applications need secondary indexes—Global Secondary Indexes (GSI",
+    false
+  ],
+  [
+    6,
+    "How Does the DynamoDB TTL Feature Automatically Expire and Delete Outdated Items?",
+    "Amazon DynamoDB Time to Live (TTL) is an automated, zero-cost data lifecycle management feature that identifies and purges expired items from your tables without consuming provisioned read or write throughput. It works by monitoring a user-defined attribu",
+    false
+  ],
+  [
+    5,
+    "Which DynamoDB Read Consistency Option Consumes Double the RCUs?",
+    "Amazon DynamoDB offers two main read consistency options for fetching data: Eventual Consistency and Strong Consistency. When retrieving items, choosing Strongly Consistent Reads consumes double the Read Capacity Units (RCUs) compared to Eventually Consis",
+    false
+  ],
+  [
+    4,
+    "How Does DynamoDB Global Tables Replicate Data Across Regions?",
+    "Amazon DynamoDB global tables enable multi-Region, multi-active data replication, ensuring that write and read operations performed in one AWS Region are automatically synchronized across all designated replica regions. This continuous replication capabil",
+    false
+  ],
+  [
+    3,
+    "How Does DynamoDB Handle Consistency in Read Operations?",
+    "Amazon DynamoDB offers two read consistency models for query and get item operations: eventual consistency and strongly consistent reads. By default, DynamoDB uses eventually consistent reads, which optimize for throughput and lower latency by returning d",
+    false
+  ],
+  [
+    2,
+    "What Happens When a DynamoDB Partition Key Receives Excess Traffic?",
+    "When a single partition key in Amazon DynamoDB receives a disproportionately high volume of read or write requests, it creates a scenario known as a \"hot partition\" or \"hot key.\" DynamoDB distributes database workload and storage across multiple physical",
+    false
+  ],
+  [
+    1,
+    "What is the maximum primary key size allowed in DynamoDB?",
+    "In Amazon DynamoDB, the maximum primary key size depends on whether the table uses a simple primary key (partition key only) or a composite primary key (partition key and sort key), with attribute values allowed up to a maximum length of 2,048 bytes (2 KB",
+    false
+  ]
+]

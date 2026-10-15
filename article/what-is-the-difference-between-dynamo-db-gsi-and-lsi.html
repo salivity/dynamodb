@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What is the Difference Between DynamoDB GSI and LSI? - dynamodb</title>
+    <meta name="description" content="DynamoDB provides two types of secondary indexes—Global Secondary Indexes (GSIs) and Local Secondary Indexes (LSIs)—to allow flexible querying on non-key attributes. The fundamental difference lies in their partition key structure and scope: an LSI shares">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/what-is-the-difference-between-dynamo-db-gsi-and-lsi">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="What is the Difference Between DynamoDB GSI and LSI? - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/what-is-the-difference-between-dynamo-db-gsi-and-lsi" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="DynamoDB provides two types of secondary indexes—Global Secondary Indexes (GSIs) and Local Secondary Indexes (LSIs)—to allow flexible querying on non-key attributes. The fundamental difference lies in their partition key structure and scope: an LSI shares" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="what-is-the-difference-between-dynamodb-gsi-and-lsi">What is the
+Difference Between DynamoDB GSI and LSI?</h1>
+<p>DynamoDB provides two types of secondary indexes—Global Secondary
+Indexes (GSIs) and Local Secondary Indexes (LSIs)—to allow flexible
+querying on non-key attributes. The fundamental difference lies in their
+partition key structure and scope: an LSI shares the same partition key
+as the parent table and is scoped to a single partition, whereas a GSI
+uses a different partition key and spans across all partitions in the
+table. Choosing the right index depends on your application's query
+requirements, performance needs, and data scale.</p>
+<h2 id="core-conceptual-differences">Core Conceptual Differences</h2>
+<p>Understanding how DynamoDB distributes and indexes data is essential
+for choosing between GSIs and LSIs.</p>
+<ul>
+<li><strong>Key Schema Flexibility:</strong> An LSI must keep the exact
+same partition key as the underlying table, allowing you to choose a
+alternate sort key. A GSI allows you to define an entirely new partition
+key as well as an optional new sort key.</li>
+<li><strong>Creation Timeline:</strong> An LSI must be defined at table
+creation time; you cannot add, modify, or delete an LSI after the table
+exists. In contrast, a GSI can be created or deleted at any time during
+the lifecycle of the table.</li>
+<li><strong>Storage and Size Constraints:</strong> An LSI enforces an
+item collection size limit of 10 GB per partition key value. GSIs have
+no limit on the amount of data stored per partition key value or overall
+index size.</li>
+</ul>
+<h2 id="read-consistency-and-capacity">Read Consistency and
+Capacity</h2>
+<p>The performance and operational behavior of GSIs and LSIs differ
+significantly when handling database reads and writes.</p>
+<h3 id="consistency-models">Consistency Models</h3>
+<p>LSIs support both <strong>eventually consistent</strong> and
+<strong>strongly consistent</strong> reads because they reside on the
+same partition as the parent table. GSIs only support <strong>eventually
+consistent</strong> reads because data is asynchronously replicated from
+the base table to the GSI.</p>
+<h3 id="provisioned-throughput">Provisioned Throughput</h3>
+<p>In DynamoDB provisioned mode, LSIs consume capacity units (RCUs and
+WCUs) directly from the parent table's provisioned throughput. GSIs have
+their own dedicated throughput settings, meaning write operations on a
+GSI require sufficient throughput allocated specifically to that index;
+otherwise, base table writes may experience throttling.</p>
+<h2 id="key-comparison">Key Comparison</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Local Secondary Index (LSI)</th>
+<th>Global Secondary Index (GSI)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Partition Key</strong></td>
+<td>Must be the same as the base table</td>
+<td>Can be different from the base table</td>
+</tr>
+<tr>
+<td><strong>Sort Key</strong></td>
+<td>Must be different from the base table</td>
+<td>Can be optional or different</td>
+</tr>
+<tr>
+<td><strong>Creation Time</strong></td>
+<td>Table creation only</td>
+<td>Any time (creation or post-creation)</td>
+</tr>
+<tr>
+<td><strong>Read Consistency</strong></td>
+<td>Eventually or Strongly Consistent</td>
+<td>Eventually Consistent only</td>
+</tr>
+<tr>
+<td><strong>Capacity / Throughput</strong></td>
+<td>Consumes base table throughput</td>
+<td>Has separate provisioned capacity</td>
+</tr>
+<tr>
+<td><strong>Partition Size Limit</strong></td>
+<td>10 GB limit per partition key value</td>
+<td>No size limit</td>
+</tr>
+<tr>
+<td><strong>Index Limits Per Table</strong></td>
+<td>Up to 5 per table</td>
+<td>Up to 20 per table</td>
+</tr>
+</tbody>
+</table>
+<h2 id="when-to-use-each-index">When to Use Each Index</h2>
+<p>Select an <strong>LSI</strong> when you need strong read consistency,
+want your indexes to share the table's throughput capacity, and know
+that your item collections will never exceed the 10 GB limit per
+partition key.</p>
+<p>Select a <strong>GSI</strong> when you need to query across the
+entire dataset using a different partition key, require flexibility to
+create or remove indexes as application requirements evolve, or expect
+high-volume data growth that exceeds 10 GB per partition key.</p></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/dynamodb'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Is DynamoDB a Fully Managed NoSQL Database? - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB is considered a fully managed NoSQL database service because AWS handles all the operational overhead of running, scaling, and maintaining a distributed database. Users do not need to provision, configure, or patch hardware or software, no">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/why-is-dynamo-db-a-fully-managed-no-sql-database">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Is DynamoDB a Fully Managed NoSQL Database? - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/why-is-dynamo-db-a-fully-managed-no-sql-database" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB is considered a fully managed NoSQL database service because AWS handles all the operational overhead of running, scaling, and maintaining a distributed database. Users do not need to provision, configure, or patch hardware or software, no" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-is-dynamodb-a-fully-managed-nosql-database">Why Is DynamoDB
+a Fully Managed NoSQL Database?</h1>
+<p>Amazon DynamoDB is considered a fully managed NoSQL database service
+because AWS handles all the operational overhead of running, scaling,
+and maintaining a distributed database. Users do not need to provision,
+configure, or patch hardware or software, nor do they need to manage
+cluster topology, replication, or storage allocation. This serverless
+approach allows developers to create tables and query data while AWS
+automatically manages throughput capacity, hardware failures, backups,
+and global data distribution in the background.</p>
+<h2 id="automated-infrastructure-and-maintenance">Automated
+Infrastructure and Maintenance</h2>
+<p>In a traditional database setup, administrators spend significant
+time managing physical or virtual servers, applying operating system
+updates, and patching database engine software. DynamoDB removes these
+tasks completely. AWS provisions the underlying infrastructure, handles
+software upgrades seamlessly without downtime, and automatically repairs
+or replaces failing hardware nodes behind the scenes. Developers
+interact purely with an API, sending requests to create tables, read
+records, or write data without ever managing an underlying virtual
+machine or container.</p>
+<h2 id="dynamic-and-elastic-scaling">Dynamic and Elastic Scaling</h2>
+<p>DynamoDB provides seamless, dynamic scaling for both storage and
+throughput without requiring manual intervention:</p>
+<ul>
+<li><strong>Automatic Storage Allocation:</strong> DynamoDB tables grow
+dynamically as data is added. There are no pre-allocated disk limits,
+and storage automatically scales up or down based on the volume of items
+stored.</li>
+<li><strong>Flexible Capacity Modes:</strong> Users can choose between
+On-Demand capacity, where the database scales instantly to accommodate
+incoming traffic spikes, and Provisioned capacity, which automatically
+adjusts read and write capacity units using auto-scaling policies.</li>
+<li><strong>Partition Management:</strong> As traffic or storage volume
+increases, DynamoDB automatically splits data partitions across multiple
+physical drives to maintain high performance without causing query
+latencies to spike.</li>
+</ul>
+<h2 id="built-in-high-availability-and-fault-tolerance">Built-In High
+Availability and Fault Tolerance</h2>
+<p>Fault tolerance is built into DynamoDB by default rather than
+requiring complex cluster configurations:</p>
+<ol type="1">
+<li><strong>Multi-AZ Replication:</strong> Every write to a DynamoDB
+table is synchronously replicated across three separate Availability
+Zones within an AWS Region. This ensures that a single zone failure will
+not result in data loss or service disruption.</li>
+<li><strong>Global Tables:</strong> For applications requiring
+multi-region redundancy or low-latency access for global users, DynamoDB
+offers Global Tables. This feature provides fully managed multi-active
+replication across chosen AWS regions, handling conflict resolution
+automatically.</li>
+<li><strong>Continuous Monitoring:</strong> The underlying system
+continuously runs health checks and routes traffic around degraded
+infrastructure, maintaining enterprise-grade uptime automatically.</li>
+</ol>
+<h2 id="comprehensive-security-and-data-management">Comprehensive
+Security and Data Management</h2>
+<p>DynamoDB integrates native administration and security features into
+the service layer:</p>
+<ul>
+<li><strong>Encryption by Default:</strong> All user data is encrypted
+at rest using keys managed by AWS Key Management Service (KMS), removing
+the burden of manual cryptographic setup.</li>
+<li><strong>Automated Backups and Point-in-Time Recovery:</strong>
+Point-in-Time Recovery (PITR) allows databases to be restored to any
+second within the preceding 35 days without performance impact on active
+workloads.</li>
+<li><strong>Integrated Access Control:</strong> Fine-grained access
+control is enforced through AWS Identity and Access Management (IAM),
+allowing permissions to be granted at the table, item, or attribute
+level without deploying external authentication proxies.</li>
+</ul></article>
+        <div id="comments-container"></div>
+        <script>
+            const utterancesScript = document.createElement('script');
+            utterancesScript.setAttribute('src', 'https://utteranc.es/client.js');
+            utterancesScript.setAttribute('repo', 'salivity/dynamodb'); 
+            utterancesScript.setAttribute('issue-term', 'pathname'); 
+            const currentTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            utterancesScript.setAttribute('theme', currentTheme === 'dark' ? 'github-dark' : 'github-light'); 
+            utterancesScript.setAttribute('crossorigin', 'anonymous');
+            utterancesScript.async = true;
+            document.getElementById('comments-container').appendChild(utterancesScript);
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>
