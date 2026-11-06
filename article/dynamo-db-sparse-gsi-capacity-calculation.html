@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Sparse GSI Capacity Calculation - dynamodb</title>
+    <meta name="description" content="This article explains how Amazon DynamoDB calculates read and write capacity unit consumption for sparse global secondary indexes (GSIs). A sparse index only contains items that feature the index&#39;s partition key and sort key attributes. Understanding how">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-sparse-gsi-capacity-calculation">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Sparse GSI Capacity Calculation - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-sparse-gsi-capacity-calculation" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Amazon DynamoDB calculates read and write capacity unit consumption for sparse global secondary indexes (GSIs). A sparse index only contains items that feature the index&#39;s partition key and sort key attributes. Understanding how" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-sparse-gsi-capacity-calculation">DynamoDB Sparse GSI
+Capacity Calculation</h1>
+<p>This article explains how Amazon DynamoDB calculates read and write
+capacity unit consumption for sparse global secondary indexes (GSIs). A
+sparse index only contains items that feature the index's partition key
+and sort key attributes. Understanding how DynamoDB measures data sizes,
+updates, and omissions within these projections enables precise capacity
+planning and cost optimization.</p>
+<h3 id="how-sparse-indexes-determine-write-capacity">How Sparse Indexes
+Determine Write Capacity</h3>
+<p>DynamoDB consumes Write Capacity Units (WCUs) on a GSI only when an
+operation on the base table results in an addition, update, or deletion
+of an item within that index. Because a sparse GSI only indexes items
+containing the designated key attributes, writes to the base table do
+not always consume GSI capacity.</p>
+<ul>
+<li><strong>Omitted Index Keys (Zero WCU):</strong> If a base table
+write (<code>PutItem</code>, <code>UpdateItem</code>) does not include
+the GSI's partition key (or sort key, if defined), DynamoDB does not
+write to the GSI. The GSI consumes 0 WCUs for that operation.</li>
+<li><strong>New GSI Items:</strong> When a base table operation
+introduces the GSI keys, DynamoDB writes the item to the GSI. The
+consumed WCU depends on the size of the projected item, calculated in 1
+KB increments (rounded up).</li>
+<li><strong>Updating Projected Attributes:</strong> If an update changes
+an attribute projected into the GSI, DynamoDB writes the updated item to
+the GSI. The WCU consumed equals the size of the new projected item
+rounded up to the nearest 1 KB.</li>
+<li><strong>Updating Non-Projected Attributes (Zero WCU):</strong> If an
+update only modifies base table attributes that are not included in the
+GSI projection, no write occurs on the GSI, consuming 0 WCUs.</li>
+<li><strong>Removing Index Keys or Deleting Items:</strong> If a base
+table item is deleted, or updated so that its GSI key attributes are
+removed, DynamoDB deletes the corresponding entry from the GSI. The GSI
+consumes write capacity equal to the size of the <em>previously
+existing</em> projected item rounded up to the nearest 1 KB.</li>
+</ul>
+<h3 id="calculating-gsi-item-size-for-capacity">Calculating GSI Item
+Size for Capacity</h3>
+<p>DynamoDB calculates the size of an item in a GSI differently from the
+base table. The item size in a GSI includes:</p>
+<ol type="1">
+<li>The size of the GSI partition key attribute name and value.</li>
+<li>The size of the GSI sort key attribute name and value (if
+present).</li>
+<li>The size of the base table primary key attributes (partition key and
+sort key) that are automatically projected into the index.</li>
+<li>The size of any additional projected attribute names and values
+(<code>KEYS_ONLY</code>, <code>INCLUDE</code>, or
+<code>ALL</code>).</li>
+<li>An additional 100 bytes of indexing overhead per item.</li>
+</ol>
+<p>The total byte count is rounded up to the nearest 1 KB multiplier to
+determine the base WCU required for each write.</p>
+<h3 id="read-capacity-unit-rcu-calculation">Read Capacity Unit (RCU)
+Calculation</h3>
+<p>Read operations on a sparse GSI consume Read Capacity Units (RCUs)
+only for the items retrieved from the index:</p>
+<ul>
+<li><strong>Eventually Consistent Reads:</strong> GSIs support
+eventually consistent reads by default. One RCU delivers two eventually
+consistent reads per second for items up to 4 KB in size. If an item
+exceeds 4 KB, DynamoDB rounds up to the next 4 KB boundary (e.g., an 8
+KB item requires 2 RCUs).</li>
+<li><strong>Sparse Efficiency:</strong> Queries and scans on a sparse
+GSI consume fewer total RCUs compared to base table scans because
+DynamoDB only reads items that exist in the index, completely bypassing
+items that lack the GSI keys.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-sparse-gsi-capacity-calculation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

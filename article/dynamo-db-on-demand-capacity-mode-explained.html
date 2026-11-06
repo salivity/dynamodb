@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB On-Demand Capacity Mode Explained - dynamodb</title>
+    <meta name="description" content="This article explains Amazon DynamoDB&#39;s on-demand capacity mode, the specific operational setting that eliminates the need to forecast read and write throughput. It outlines how on-demand capacity manages unpredictable workloads, compares the mechanism di">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-on-demand-capacity-mode-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB On-Demand Capacity Mode Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-on-demand-capacity-mode-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains Amazon DynamoDB&#39;s on-demand capacity mode, the specific operational setting that eliminates the need to forecast read and write throughput. It outlines how on-demand capacity manages unpredictable workloads, compares the mechanism di" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-on-demand-capacity-mode-explained">DynamoDB On-Demand
+Capacity Mode Explained</h1>
+<p>This article explains Amazon DynamoDB's on-demand capacity mode, the
+specific operational setting that eliminates the need to forecast read
+and write throughput. It outlines how on-demand capacity manages
+unpredictable workloads, compares the mechanism directly with
+traditional provisioned capacity, and details the primary technical
+scenarios where choosing on-demand mode optimizes cost and development
+velocity.</p>
+<h2 id="the-solution-on-demand-capacity-mode">The Solution: On-Demand
+Capacity Mode</h2>
+<p>Amazon DynamoDB provides two capacity modes:
+<strong>Provisioned</strong> and <strong>On-Demand</strong>. The mode
+that completely eliminates the need to forecast read and write
+throughput is <strong>On-Demand Capacity Mode</strong>.</p>
+<p>With on-demand mode, DynamoDB instantly accommodates workloads as
+they ramp up or down to any previously reached traffic level. If a
+workload reaches a new peak, DynamoDB automatically scales to meet the
+volume. You do not need to specify read capacity units (RCUs) or write
+capacity units (WCUs), nor do you need to configure complex auto-scaling
+policies.</p>
+<h2 id="how-on-demand-capacity-works">How On-Demand Capacity Works</h2>
+<p>Instead of pre-allocating dedicated database resources, on-demand
+capacity operates on a pure pay-per-request model:</p>
+<ul>
+<li><strong>Write Request Units (WRUs):</strong> Each unit represents
+one write operation for an item up to 1 KB in size.</li>
+<li><strong>Read Request Units (RRUs):</strong> Each unit represents one
+strongly consistent read request (or two eventually consistent read
+requests) for an item up to 4 KB in size.</li>
+</ul>
+<p>When an application issues a query, read, or write request, DynamoDB
+dynamically allocates the compute and storage resources required to
+complete the operation. If no traffic hits the database, you only pay
+for data storage, with zero charges for throughput.</p>
+<h2 id="on-demand-vs-provisioned-capacity">On-Demand vs. Provisioned
+Capacity</h2>
+<p>To understand the operational advantage, consider the differences
+between the two modes:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Feature</th>
+<th style="text-align: left;">On-Demand Mode</th>
+<th style="text-align: left;">Provisioned Mode</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Capacity Forecasting</strong></td>
+<td style="text-align: left;">Not required</td>
+<td style="text-align: left;">Mandatory (RCUs and WCUs)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Pricing Model</strong></td>
+<td style="text-align: left;">Pay-per-request</td>
+<td style="text-align: left;">Hourly rate per allocated unit</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Traffic Handling</strong></td>
+<td style="text-align: left;">Instantly scales to sudden spikes</td>
+<td style="text-align: left;">Scales according to defined thresholds;
+may throttle sudden spikes</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Idle Costs</strong></td>
+<td style="text-align: left;">Zero throughput cost when idle</td>
+<td style="text-align: left;">Charged continuously for provisioned
+units</td>
+</tr>
+</tbody>
+</table>
+<p>In provisioned mode, underestimating throughput leads to throttled
+requests (HTTP 400 <code>ProvisionedThroughputExceededException</code>),
+while overestimating results in paying for unused capacity. On-demand
+mode removes this trade-off by scaling dynamically at the cost of a
+slightly higher per-request price point.</p>
+<h2 id="ideal-use-cases-for-on-demand-mode">Ideal Use Cases for
+On-Demand Mode</h2>
+<p>Choosing on-demand capacity is recommended under the following
+conditions:</p>
+<ul>
+<li><strong>New Applications:</strong> When you are launching a new
+product and cannot accurately model user adoption or query volume.</li>
+<li><strong>Spiky or Unpredictable Traffic:</strong> Workloads with
+sudden, dramatic bursts of activity—such as flash sales, breaking news
+alerts, or IoT event ingestion—that exceed traditional auto-scaling
+ramp-up times.</li>
+<li><strong>Low or Infrequent Utilization:</strong> Systems that remain
+idle for long stretches, such as developer environments or internal
+business applications used only during business hours.</li>
+<li><strong>Reduced Operational Overhead:</strong> Teams that want to
+minimize maintenance overhead and eliminate database capacity management
+tasks.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-on-demand-capacity-mode-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

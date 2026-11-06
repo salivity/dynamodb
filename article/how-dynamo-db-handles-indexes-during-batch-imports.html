@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Handles Indexes During Batch Imports - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages index maintenance during high-volume batch imports differently depending on whether you are writing to Local Secondary Indexes (LSIs) or Global Secondary Indexes (GSIs). While LSIs are updated synchronously alongside the base table">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-indexes-during-batch-imports">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Handles Indexes During Batch Imports - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-indexes-during-batch-imports" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages index maintenance during high-volume batch imports differently depending on whether you are writing to Local Secondary Indexes (LSIs) or Global Secondary Indexes (GSIs). While LSIs are updated synchronously alongside the base table" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-handles-indexes-during-batch-imports">How DynamoDB
+Handles Indexes During Batch Imports</h1>
+<p>Amazon DynamoDB manages index maintenance during high-volume batch
+imports differently depending on whether you are writing to Local
+Secondary Indexes (LSIs) or Global Secondary Indexes (GSIs). While LSIs
+are updated synchronously alongside the base table, GSIs rely on an
+asynchronous, decoupled replication mechanism. Understanding how these
+update models handle throughput, capacity consumption, and potential
+throttling is essential for maintaining optimal ingestion performance
+and preventing base table write failures.</p>
+<h3 id="local-secondary-indexes-synchronous-maintenance">Local Secondary
+Indexes: Synchronous Maintenance</h3>
+<p>Local Secondary Indexes share the same partition key as the base
+table and are updated synchronously within the same transaction as the
+base item write.</p>
+<ul>
+<li><strong>Capacity Consumption:</strong> When an item is written or
+updated during a batch import, DynamoDB automatically consumes
+additional Write Capacity Units (WCUs) from the base table to update
+every affected LSI.</li>
+<li><strong>Throttling Risks:</strong> Because LSI maintenance is
+synchronous, an item write will fail completely if there is insufficient
+write capacity on the base table. Furthermore, the 10 GB partition size
+limit applies to any item collection containing LSIs, which can lead to
+partition-level throttling during high-volume targeted imports.</li>
+</ul>
+<h3 id="global-secondary-indexes-asynchronous-maintenance">Global
+Secondary Indexes: Asynchronous Maintenance</h3>
+<p>Global Secondary Indexes have distinct partition keys and sort keys
+from the base table. DynamoDB decouples GSI maintenance from base table
+writes using an internal, stream-based log architecture.</p>
+<ul>
+<li><strong>Replication Flow:</strong> When a batch write hits the base
+table, DynamoDB acknowledges the write as soon as it is committed to
+storage. An internal replication engine immediately reads the change and
+applies it to the corresponding GSI asynchronously.</li>
+<li><strong>Independent Provisioning:</strong> GSIs have their own
+provisioned or on-demand write capacity. Ingested data generates write
+activity on the GSI only if the ingested attributes match the GSI's
+partition schema or projection list.</li>
+<li><strong>Replication Lag:</strong> During massive data ingestion, the
+time difference between base table updates and GSI updates—known as
+replication lag—can increase temporarily while DynamoDB works through
+the log queue.</li>
+</ul>
+<h3 id="backpressure-and-base-table-throttling">Backpressure and Base
+Table Throttling</h3>
+<p>A critical aspect of DynamoDB’s index architecture is backpressure
+protection. While GSI updates are asynchronous, DynamoDB does not allow
+an index's replication queue to grow indefinitely.</p>
+<p>If a GSI lacks sufficient write capacity to keep up with the batch
+import rate on the base table, DynamoDB throttles the base table writes.
+Even if the base table has ample write capacity remaining, requests like
+<code>BatchWriteItem</code> or <code>PutItem</code> will receive
+<code>ProvisionedThroughputExceededException</code> errors until the GSI
+catches up.</p>
+<h3 id="best-practices-for-batch-imports">Best Practices for Batch
+Imports</h3>
+<ul>
+<li><strong>Create GSIs After Ingestion:</strong> For initial data
+population, import data into a table with no GSIs. Once the import
+completes, create the GSIs. DynamoDB will backfill the indexes using
+managed internal capacity without impacting your operational table
+limits.</li>
+<li><strong>Pre-Scale Capacity:</strong> If writing to existing tables
+with GSIs, match or exceed the base table’s WCU on all affected GSIs. If
+using On-Demand mode, gradually ramp up traffic or contact support to
+pre-warm the partitions if the import involves an immediate, massive
+burst.</li>
+<li><strong>Leverage Native S3 Import:</strong> Use DynamoDB’s native
+"Import from S3" feature for initial bulk loads. This service parses
+data from Amazon S3 directly into a new DynamoDB table, building the
+base table and secondary indexes simultaneously without consuming
+provisioned write capacity or triggering standard throttling
+mechanisms.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-indexes-during-batch-imports';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

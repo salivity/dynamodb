@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Binary and Binary Set Data Types Explained - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB natively supports raw binary data using the Binary (B) and Binary Set (BS) attribute types to store non-text payloads such as encrypted text, compressed documents, serialized objects, or image thumbnails. This article explains how DynamoDB">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-binary-and-binary-set-data-types-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Binary and Binary Set Data Types Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-binary-and-binary-set-data-types-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB natively supports raw binary data using the Binary (B) and Binary Set (BS) attribute types to store non-text payloads such as encrypted text, compressed documents, serialized objects, or image thumbnails. This article explains how DynamoDB" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-binary-and-binary-set-data-types-explained">DynamoDB
+Binary and Binary Set Data Types Explained</h1>
+<p>Amazon DynamoDB natively supports raw binary data using the Binary
+(<code>B</code>) and Binary Set (<code>BS</code>) attribute types to
+store non-text payloads such as encrypted text, compressed documents,
+serialized objects, or image thumbnails. This article explains how
+DynamoDB handles the encoding, storage limits, uniqueness constraints,
+and key indexing of both binary scalar types and binary set
+attributes.</p>
+<h3 id="binary-data-type-b">Binary Data Type (<code>B</code>)</h3>
+<p>The Binary (<code>B</code>) scalar type stores arbitrary binary data.
+DynamoDB does not alter or format the underlying raw bytes, allowing any
+binary format to be stored directly within an item.</p>
+<ul>
+<li><strong>Base64 Encoding:</strong> Because DynamoDB communicates
+using JSON over HTTP APIs, all binary data sent to DynamoDB must be
+Base64-encoded in API requests. Most AWS SDKs automatically handle this
+encoding and decoding.</li>
+<li><strong>Storage and Size Calculation:</strong> DynamoDB evaluates
+binary size based on the decoded raw byte count, not the Base64
+representation. The attribute name length plus the actual raw byte
+length counts toward DynamoDB’s maximum item size limit of 400 KB.</li>
+<li><strong>Usage as Primary Keys:</strong> A Binary attribute can be
+used as a Partition Key or a Sort Key. When evaluated as a sort key or
+compared in conditional expressions, DynamoDB compares binary values
+lexicographically using unsigned byte values (byte-by-byte
+comparison).</li>
+</ul>
+<h3 id="binary-set-data-type-bs">Binary Set Data Type
+(<code>BS</code>)</h3>
+<p>The Binary Set (<code>BS</code>) attribute type represents a
+collection of distinct binary values.</p>
+<ul>
+<li><strong>Element Uniqueness:</strong> Every element within a Binary
+Set must be unique. If an application attempts to write duplicate binary
+elements to the same set within an update, DynamoDB will reject the
+request with a validation error.</li>
+<li><strong>Unordered Nature:</strong> DynamoDB does not preserve the
+order of elements within a Binary Set. Applications should not rely on
+element sequence when retrieving set data.</li>
+<li><strong>Empty Set Restrictions:</strong> DynamoDB sets cannot be
+empty. A Binary Set must contain at least one binary value; attempting
+to save an empty set results in an error.</li>
+<li><strong>Usage Constraints:</strong> Binary Sets cannot be used as
+primary keys (neither as a partition key nor a sort key). They can only
+exist as standard attributes within an item.</li>
+<li><strong>Size Calculation:</strong> The size impact of a Binary Set
+is calculated as the length of the attribute name plus the sum of the
+raw decoded byte sizes of each individual binary element in the
+set.</li>
+</ul>
+<h3 id="comparison-and-conditional-logic">Comparison and Conditional
+Logic</h3>
+<p>DynamoDB allows conditional operations and queries on Binary
+attributes:</p>
+<ul>
+<li><strong>Scalar Binary (<code>B</code>):</strong> Supports operators
+such as <code>=</code>, <code>&lt;&gt;</code>, <code>&lt;</code>,
+<code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>, and
+<code>BEGINS_WITH</code> for range queries and sorting.</li>
+<li><strong>Binary Set (<code>BS</code>):</strong> Supports the
+<code>CONTAINS</code> function to verify the presence of a specific
+binary element within the set, as well as set-level update operations
+like <code>ADD</code> and <code>DELETE</code> to append or remove
+specific binary elements without overwriting the entire set.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-binary-and-binary-set-data-types-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

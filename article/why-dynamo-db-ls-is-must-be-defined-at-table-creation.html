@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why DynamoDB LSIs Must Be Defined at Table Creation - dynamodb</title>
+    <meta name="description" content="This article explains the architectural reasons why Amazon DynamoDB requires Local Secondary Indexes (LSIs) to be defined exclusively at table creation time. While Global Secondary Indexes (GSIs) can be created, updated, or deleted at any stage of a table">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/why-dynamo-db-ls-is-must-be-defined-at-table-creation">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why DynamoDB LSIs Must Be Defined at Table Creation - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/why-dynamo-db-ls-is-must-be-defined-at-table-creation" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains the architectural reasons why Amazon DynamoDB requires Local Secondary Indexes (LSIs) to be defined exclusively at table creation time. While Global Secondary Indexes (GSIs) can be created, updated, or deleted at any stage of a table" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-dynamodb-lsis-must-be-defined-at-table-creation">Why
+DynamoDB LSIs Must Be Defined at Table Creation</h1>
+<p>This article explains the architectural reasons why Amazon DynamoDB
+requires Local Secondary Indexes (LSIs) to be defined exclusively at
+table creation time. While Global Secondary Indexes (GSIs) can be
+created, updated, or deleted at any stage of a table's lifecycle, LSIs
+remain permanently bound to the initial schema. Below, we examine the
+underlying storage mechanisms, synchronous write requirements, and
+partition constraints that dictate this restriction.</p>
+<h3 id="shared-storage-partitions-and-colocation">Shared Storage
+Partitions and Colocation</h3>
+<p>The primary reason an LSI cannot be added later is physical data
+colocation. An LSI uses the same partition key as the underlying base
+table, only altering the sort key.</p>
+<p>In DynamoDB's distributed architecture, all items that share the same
+partition key are stored together on the same physical storage node
+(partition). When you configure an LSI, the index data is written
+directly to the exact same partition where the base table items reside.
+Because the index data must physically live inside the existing table's
+partitions alongside the main item collection, DynamoDB cannot simply
+allocate a separate set of nodes to backfill the data later.</p>
+<h3 id="synchronous-write-operations-and-strong-consistency">Synchronous
+Write Operations and Strong Consistency</h3>
+<p>Unlike GSIs, which are updated asynchronously, LSIs support strongly
+consistent reads. To provide strong consistency, any
+<code>PutItem</code>, <code>UpdateItem</code>, or
+<code>DeleteItem</code> call on the base table must synchronously update
+the LSI within the same transaction-like boundary on that storage
+node.</p>
+<p>Retroactively adding an LSI to an existing table would require:</p>
+<ul>
+<li>Locking or pausing writes to prevent data divergence while indexing
+existing data.</li>
+<li>Rewriting data structures directly inside live, populated storage
+partitions across a distributed cluster.</li>
+</ul>
+<p>Because DynamoDB is designed for predictable, single-digit
+millisecond latency at any scale, performing a resource-heavy,
+synchronous backfill within live data partitions is fundamentally
+opposed to its design principles.</p>
+<h3 id="the-10-gb-item-collection-limit">The 10 GB Item Collection
+Limit</h3>
+<p>When a table has one or more LSIs, DynamoDB enforces a strict 10 GB
+size limit on any single "item collection" (all items sharing the same
+partition key).</p>
+<p>If you were permitted to add an LSI to an existing table, DynamoDB
+might encounter existing item collections that already exceed 10 GB. An
+index cannot be applied to collections that violate this limit, which
+would cause an unresolvable conflict without deleting or rejecting
+pre-existing data. Defining the LSI at creation ensures that the 10 GB
+constraint is enforced from the very first write.</p>
+<h3 id="alternatives-when-schema-requirements-change">Alternatives When
+Schema Requirements Change</h3>
+<p>If your application requires a new index on an existing DynamoDB
+table, you must use one of the following approaches:</p>
+<ol type="1">
+<li><strong>Use a Global Secondary Index (GSI):</strong> GSIs can be
+created at any time on an active table. A GSI can use the same partition
+key as the base table with a different sort key, functioning similarly
+to an LSI, though it only supports eventually consistent reads and
+consumes its own provisioned or on-demand throughput.</li>
+<li><strong>Table Migration:</strong> If an LSI and strong consistency
+are strictly required, you must create a new DynamoDB table with the
+desired LSI defined from the start, then migrate your existing data to
+the new table using tools such as AWS Application Migration Service,
+DynamoDB Streams with AWS Lambda, or AWS Glue.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/why-dynamo-db-ls-is-must-be-defined-at-table-creation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

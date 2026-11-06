@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB LSI vs GSI: Key Structural Differences - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides two types of secondary indexes—Local Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs)—to enable flexible querying beyond a table&#39;s primary key design. This article explains the primary structural difference between LSI">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-lsi-vs-gsi-key-structural-differences">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB LSI vs GSI: Key Structural Differences - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-lsi-vs-gsi-key-structural-differences" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides two types of secondary indexes—Local Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs)—to enable flexible querying beyond a table&#39;s primary key design. This article explains the primary structural difference between LSI" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-lsi-vs-gsi-key-structural-differences">DynamoDB LSI vs
+GSI: Key Structural Differences</h1>
+<p>Amazon DynamoDB provides two types of secondary indexes—Local
+Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs)—to enable
+flexible querying beyond a table's primary key design. This article
+explains the primary structural difference between LSIs and GSIs,
+focusing on their partition key architecture, data scoping, throughput
+allocation, and lifecycle constraints.</p>
+<h3 id="the-primary-difference-partition-key-architecture">The Primary
+Difference: Partition Key Architecture</h3>
+<p>The fundamental structural difference between an LSI and a GSI lies
+in the <strong>partition key</strong>:</p>
+<ul>
+<li><strong>Local Secondary Index (LSI):</strong> Must use the
+<strong>same partition key</strong> as the base table, but defines a
+<strong>different sort key</strong>. Because it shares the base table's
+partition key, an LSI is "local" to a specific partition.</li>
+<li><strong>Global Secondary Index (GSI):</strong> Can define a
+<strong>completely different partition key</strong> and an optional
+alternative sort key. It can index data across the entire table
+regardless of the original partition key, making it "global."</li>
+</ul>
+<h3 id="data-scoping-and-the-10-gb-item-collection-limit">Data Scoping
+and the 10 GB Item Collection Limit</h3>
+<p>Because an LSI shares the base table's partition key, all items
+sharing that partition key form an "item collection." DynamoDB enforces
+a strict structural limit on item collections: the total size of all
+base table items and their associated LSI entries sharing the same
+partition key cannot exceed <strong>10 GB</strong>. If this limit is
+reached, write operations for that partition key will fail.</p>
+<p>A GSI does not create item collections with the base table. It
+maintains its own independent partition structure, meaning there is no
+10 GB size restriction tied to the base table's partition key.</p>
+<h3 id="provisioned-throughput-and-storage">Provisioned Throughput and
+Storage</h3>
+<p>The structural independence of a GSI extends to its capacity
+management:</p>
+<ul>
+<li><strong>LSIs share capacity:</strong> Reads and writes to an LSI
+consume the Read Capacity Units (RCUs) and Write Capacity Units (WCUs)
+of the underlying base table.</li>
+<li><strong>GSIs require dedicated capacity:</strong> A GSI operates as
+a separate data store behind the scenes. It requires its own provisioned
+or on-demand throughput settings. If a GSI experiences throttling due to
+insufficient write capacity, it can throttle writes to the base
+table.</li>
+</ul>
+<h3 id="index-lifecycle-and-flexibility">Index Lifecycle and
+Flexibility</h3>
+<p>The tight structural coupling of an LSI also dictates when it can be
+created:</p>
+<ul>
+<li><strong>LSIs must be defined at table creation.</strong> Once the
+table exists, you cannot add, modify, or delete an LSI.</li>
+<li><strong>GSIs can be created, updated, or deleted
+dynamically</strong> at any point during the table’s lifecycle without
+needing to recreate the table.</li>
+</ul>
+<h3 id="read-consistency">Read Consistency</h3>
+<p>Structurally, LSIs reside within the same storage nodes as the base
+table partition. As a result, LSIs support both <strong>eventually
+consistent</strong> and <strong>strongly consistent</strong> reads.</p>
+<p>GSIs replicate data asynchronously from the base table across
+distinct partitions. Consequently, GSIs only support <strong>eventually
+consistent</strong> reads.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-lsi-vs-gsi-key-structural-differences';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

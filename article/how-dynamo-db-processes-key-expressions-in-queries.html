@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Processes Key Expressions in Queries - dynamodb</title>
+    <meta name="description" content="This article explores how Amazon DynamoDB evaluates and executes key condition expressions during a query operation. When querying a table or secondary index, DynamoDB relies on key expressions to locate items without scanning the entire dataset. Understa">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-key-expressions-in-queries">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Processes Key Expressions in Queries - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-key-expressions-in-queries" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how Amazon DynamoDB evaluates and executes key condition expressions during a query operation. When querying a table or secondary index, DynamoDB relies on key expressions to locate items without scanning the entire dataset. Understa" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-processes-key-expressions-in-queries">How DynamoDB
+Processes Key Expressions in Queries</h1>
+<p>This article explores how Amazon DynamoDB evaluates and executes key
+condition expressions during a query operation. When querying a table or
+secondary index, DynamoDB relies on key expressions to locate items
+without scanning the entire dataset. Understanding this internal
+workflow—from hash routing and sort key evaluation to physical data
+retrieval and read capacity calculation—enables developers to design
+high-performance, cost-effective schemas.</p>
+<h3 id="1-partition-key-routing">1. Partition Key Routing</h3>
+<p>The query process begins with the partition key specified in the
+<code>KeyConditionExpression</code>. DynamoDB requires an exact match
+(<code>=</code>) for the partition key.</p>
+<p>When the query request reaches the DynamoDB request router, the
+router takes the partition key value and processes it through an
+internal hash function. The resulting hash value maps directly to a
+specific partition—a physical storage node (and its replicas) managed by
+DynamoDB. Because the partition key identifies the precise storage node,
+DynamoDB skips the vast majority of the table and targets only the
+partition that holds the matching data.</p>
+<h3 id="2-sort-key-evaluation">2. Sort Key Evaluation</h3>
+<p>Once the target partition is identified, DynamoDB evaluates the sort
+key portion of the key condition expression, if one is provided. Unlike
+partition keys, sort keys support range comparisons and functions:</p>
+<ul>
+<li>Equality: <code>=</code></li>
+<li>Range comparisons: <code>&lt;</code>, <code>&lt;=</code>,
+<code>&gt;</code>, <code>&gt;=</code></li>
+<li>Subsets: <code>BETWEEN</code></li>
+<li>Prefix matching: <code>begins_with()</code></li>
+</ul>
+<p>Within each physical partition, items sharing the same partition key
+are stored in an ordered structure (such as a B-tree), sorted in
+ascending order by their sort key values. DynamoDB uses the sort key
+condition to find the starting and ending boundaries of the requested
+dataset within the index structure.</p>
+<h3 id="3-sequential-data-retrieval">3. Sequential Data Retrieval</h3>
+<p>Because items with the same partition key are stored contiguously and
+pre-sorted by their sort key, DynamoDB can read the matching records
+sequentially from physical storage.</p>
+<p>If no sort key condition is specified, DynamoDB retrieves all items
+associated with that partition key. If a sort key condition is present,
+the storage engine jumps directly to the first matching entry and reads
+sequentially until it encounters an item that no longer satisfies the
+condition.</p>
+<p>Key attributes of this phase include:</p>
+<ul>
+<li><strong>Scan Direction:</strong> By default, items are read in
+ascending order. If the <code>ScanIndexForward</code> parameter is set
+to <code>false</code>, DynamoDB traverses the sorted structure in
+reverse order.</li>
+<li><strong>Limit Evaluation:</strong> If a <code>Limit</code> parameter
+is defined, DynamoDB stops reading as soon as the specified number of
+items are evaluated or the result set reaches 1 MB of raw data,
+whichever comes first.</li>
+</ul>
+<h3 id="4-filter-expressions-and-capacity-calculation">4. Filter
+Expressions and Capacity Calculation</h3>
+<p>It is important to distinguish the key condition expression from a
+filter expression. DynamoDB processes the key condition expression first
+to retrieve the target slice of data.</p>
+<p>Read Capacity Units (RCUs) are billed based on the total size of all
+items read using the key condition expression, rounded up to the nearest
+4 KB chunk. If a <code>FilterExpression</code> is also applied to
+non-key attributes, it runs in memory <em>after</em> the key expression
+retrieval. Non-matching items are discarded before returning the
+response to the client, but the read capacity consumed remains based on
+the initial key-based retrieval.</p>
+<h3 id="5-returning-the-result">5. Returning the Result</h3>
+<p>Finally, DynamoDB packages the matching items into the response
+payload. If the query hit the 1 MB data limit or evaluated the maximum
+number of items specified by <code>Limit</code> before finishing the key
+range, the response includes a <code>LastEvaluatedKey</code>. The client
+application can pass this key back in a subsequent query as the
+<code>ExclusiveStartKey</code> to resume processing exactly where the
+previous query left off.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-key-expressions-in-queries';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Client-Side Encryption Explained - dynamodb</title>
+    <meta name="description" content="This article provides an overview of client-side encryption for Amazon DynamoDB, identifying the specific mechanism used to protect data before it ever reaches the cloud. Readers will learn how the AWS Database Encryption SDK secures sensitive attributes">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-client-side-encryption-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Client-Side Encryption Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-client-side-encryption-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of client-side encryption for Amazon DynamoDB, identifying the specific mechanism used to protect data before it ever reaches the cloud. Readers will learn how the AWS Database Encryption SDK secures sensitive attributes" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-client-side-encryption-explained">DynamoDB Client-Side
+Encryption Explained</h1>
+<p>This article provides an overview of client-side encryption for
+Amazon DynamoDB, identifying the specific mechanism used to protect data
+before it ever reaches the cloud. Readers will learn how the AWS
+Database Encryption SDK secures sensitive attributes prior to
+transmission, how this approach differs from default server-side
+encryption, and why it is essential for high-security environments.</p>
+<p>The encryption method in DynamoDB that offers client-side protection
+before transmitting data is <strong>client-side encryption</strong>,
+implemented using the <strong>AWS Database Encryption SDK</strong>
+(formerly known as the Amazon DynamoDB Encryption Client).</p>
+<p>Unlike standard server-side encryption, which encrypts data after it
+arrives at AWS data centers, client-side encryption processes data
+entirely within your local application environment. Your application
+encrypts sensitive attributes before sending them over the network to
+DynamoDB, and decrypts them only after retrieving the data back into the
+local environment.</p>
+<h3 id="how-client-side-encryption-works">How Client-Side Encryption
+Works</h3>
+<p>Client-side encryption introduces a zero-trust model to your database
+operations:</p>
+<ol type="1">
+<li><strong>Local Encryption:</strong> Before an item is written to
+DynamoDB via a <code>PutItem</code> or <code>UpdateItem</code> call, the
+SDK encrypts specific attribute values using cryptographic keys managed
+by your application or AWS Key Management Service (AWS KMS).</li>
+<li><strong>Transmission in Ciphertext:</strong> The data travels across
+the network in ciphertext format. Even though transit is typically
+secured by TLS, client-side encryption guarantees that the payload
+remains unreadable even if TLS were somehow compromised.</li>
+<li><strong>Storage as Ciphertext:</strong> DynamoDB receives and stores
+the attribute values as ciphertext. To AWS, the values are meaningless
+bytes.</li>
+<li><strong>Local Decryption:</strong> When your application fetches the
+record, DynamoDB returns the ciphertext. The SDK decrypts the values
+locally using the appropriate decryption key.</li>
+</ol>
+<h3 id="client-side-encryption-vs-server-side-encryption">Client-Side
+Encryption vs. Server-Side Encryption</h3>
+<p>DynamoDB enables Server-Side Encryption (SSE) at rest by default.
+While SSE protects data on the physical disks within AWS facilities, it
+requires trusting AWS with the plaintext during transit processing and
+key management.</p>
+<p>Client-Side Encryption ensures end-to-end security where AWS never
+possesses the plaintext data or the plaintext encryption keys. This
+distinction is critical for meeting stringent regulatory standards such
+as HIPAA, PCI-DSS, or internal zero-trust architecture mandates.</p>
+<h3 id="key-capabilities">Key Capabilities</h3>
+<ul>
+<li><strong>Attribute-Level Control:</strong> You can choose which
+attributes to encrypt, which to sign without encrypting (allowing them
+to be queried), and which to leave untouched. Primary keys (partition
+and sort keys) must remain unencrypted so DynamoDB can index and route
+the data properly, but they can still be cryptographically signed.</li>
+<li><strong>Data Integrity Checks:</strong> The SDK automatically
+calculates digital signatures for your attributes. This ensures that any
+unauthorized modifications made to the stored data—whether in transit or
+at rest—are immediately detected upon decryption.</li>
+<li><strong>Compatibility with AWS KMS:</strong> You can back the
+client-side encryption with AWS KMS customer managed keys, combining
+localized cryptographic operations with centralized key policy
+enforcement and audit logging via AWS CloudTrail.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-client-side-encryption-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

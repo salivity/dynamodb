@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How LSI Updates Impact DynamoDB Provisioned Capacity - dynamodb</title>
+    <meta name="description" content="When modifying items in an Amazon DynamoDB table that has Local Secondary Indexes (LSIs), changes to indexed or projected attributes directly consume the base table&#39;s provisioned Write Capacity Units (WCUs). Because LSIs do not have independent throughput">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-lsi-updates-impact-dynamo-db-provisioned-capacity">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How LSI Updates Impact DynamoDB Provisioned Capacity - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-lsi-updates-impact-dynamo-db-provisioned-capacity" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When modifying items in an Amazon DynamoDB table that has Local Secondary Indexes (LSIs), changes to indexed or projected attributes directly consume the base table&#39;s provisioned Write Capacity Units (WCUs). Because LSIs do not have independent throughput" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-lsi-updates-impact-dynamodb-provisioned-capacity">How LSI
+Updates Impact DynamoDB Provisioned Capacity</h1>
+<p>When modifying items in an Amazon DynamoDB table that has Local
+Secondary Indexes (LSIs), changes to indexed or projected attributes
+directly consume the base table's provisioned Write Capacity Units
+(WCUs). Because LSIs do not have independent throughput allocations, any
+index updates caused by base table mutations automatically draw from the
+base table's provisioned capacity pool. This article explains the shared
+capacity model of LSIs, the exact write cost incurred when modifying
+attributes, and how attribute projection choices determine overall
+throughput consumption.</p>
+<h3 id="the-shared-capacity-architecture">The Shared Capacity
+Architecture</h3>
+<p>Unlike Global Secondary Indexes (GSIs), which have independently
+provisioned or on-demand throughput settings, Local Secondary Indexes
+share the provisioned Read Capacity Units (RCUs) and Write Capacity
+Units (WCUs) of the base table. Every write operation applied to the
+base table that also requires an update to one or more LSIs subtracts
+capacity directly from the base table’s allocated capacity.</p>
+<h3 id="write-cost-mechanics-of-updating-attributes">Write Cost
+Mechanics of Updating Attributes</h3>
+<p>The write capacity consumed when updating an attribute depends
+strictly on whether the modified attribute is part of the index
+structure:</p>
+<ul>
+<li><strong>Updating an LSI Sort Key:</strong> If an update modifies the
+attribute that acts as the sort key for an LSI, DynamoDB must perform
+two operations within the index: deleting the existing index entry with
+the old sort key value and writing a new index entry with the updated
+value. This consumes write capacity for both the delete and the put
+operation in the index, in addition to the write operation performed on
+the base table itself.</li>
+<li><strong>Updating a Projected Attribute:</strong> If an update
+modifies an attribute that is not the index sort key but is projected
+into the LSI (via <code>INCLUDE</code> or <code>ALL</code>), DynamoDB
+must update the entry within the index to reflect the new value. This
+consumes write capacity on the base table proportional to the size of
+the updated index item.</li>
+<li><strong>Updating a Non-Projected Attribute:</strong> If the updated
+attribute is neither the LSI sort key nor projected into the index (via
+<code>KEYS_ONLY</code> or an omitted attribute in <code>INCLUDE</code>),
+the LSI is unaffected. In this scenario, DynamoDB only consumes the base
+table's standard WCU for the base item update, with zero additional WCU
+consumed by the index.</li>
+</ul>
+<h3 id="item-size-and-capacity-calculation">Item Size and Capacity
+Calculation</h3>
+<p>The throughput consumed by an index update is calculated based on the
+size of the index entry, not the full size of the base table item. An
+LSI item entry consists of:</p>
+<ul>
+<li>The base table partition key value.</li>
+<li>The base table sort key value.</li>
+<li>The LSI sort key value.</li>
+<li>Any attributes explicitly projected into the index.</li>
+</ul>
+<p>The sum of these attributes determines the size of the index record.
+DynamoDB calculates the required WCUs by rounding up the index entry
+size to the next 1 KB increment. If multiple LSIs contain the modified
+attribute, each affected index independently consumes write capacity
+based on its respective item size.</p>
+<h3 id="throttling-implications">Throttling Implications</h3>
+<p>Because write operations across all LSIs draw from a single
+provisioned WCU pool, frequent updates to indexed or heavily projected
+attributes can deplete the base table's available write capacity much
+faster than anticipated. If the combined write volume of the base table
+and all affected LSIs exceeds the provisioned limit, DynamoDB rejects
+the entire request with a
+<code>ProvisionedThroughputExceededException</code>, causing base table
+operations to throttle even if base table updates alone would have
+remained within capacity limits.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-lsi-updates-impact-dynamo-db-provisioned-capacity';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Conditional Updates on List Elements by Index - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB supports updating specific elements within a list attribute using zero-based index notation in conjunction with conditional expressions. By utilizing document paths such as attribute[index] within both the UpdateExpression and ConditionExp">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-conditional-updates-on-list-elements-by-index">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Conditional Updates on List Elements by Index - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-conditional-updates-on-list-elements-by-index" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB supports updating specific elements within a list attribute using zero-based index notation in conjunction with conditional expressions. By utilizing document paths such as attribute[index] within both the UpdateExpression and ConditionExp" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-conditional-updates-on-list-elements-by-index">DynamoDB
+Conditional Updates on List Elements by Index</h1>
+<p>Amazon DynamoDB supports updating specific elements within a list
+attribute using zero-based index notation in conjunction with
+conditional expressions. By utilizing document paths such as
+<code>attribute[index]</code> within both the
+<code>UpdateExpression</code> and <code>ConditionExpression</code>, you
+can target precise positions in a list while ensuring modifications
+occur only if the element meets predefined criteria. This article
+explains how DynamoDB processes these index-based conditional updates,
+the mechanics of evaluation, syntax examples, and critical edge cases to
+consider.</p>
+<h3 id="the-mechanics-of-index-based-targeting">The Mechanics of
+Index-Based Targeting</h3>
+<p>DynamoDB lists are ordered collections of DynamoDB-type values. You
+access individual elements using bracketed zero-based integer notation
+(e.g., <code>Tasks[0]</code>, <code>Tasks[1]</code>).</p>
+<p>When executing a conditional update on a specific list element, you
+combine two primary clauses:</p>
+<ol type="1">
+<li><strong><code>ConditionExpression</code></strong>: Evaluates whether
+the element at a specific index exists or contains a specific value
+before applying the update.</li>
+<li><strong><code>UpdateExpression</code></strong>: Specifies the
+modification to apply using the <code>SET</code> or <code>REMOVE</code>
+action at that specific index path.</li>
+</ol>
+<p>Both expressions evaluate against the existing state of the item in
+the database before any writes are applied.</p>
+<h3 id="syntax-and-implementation-example">Syntax and Implementation
+Example</h3>
+<p>To safely update a list element by its index, the request must target
+the exact path in both expressions.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;TableName&quot;</span><span class="fu">:</span> <span class="st">&quot;ProjectManagement&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Key&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;ProjectId&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;p-100&quot;</span><span class="fu">}</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;UpdateExpression&quot;</span><span class="fu">:</span> <span class="st">&quot;SET TeamMembers[2] = :new_member&quot;</span><span class="fu">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ConditionExpression&quot;</span><span class="fu">:</span> <span class="st">&quot;TeamMembers[2] = :expected_member&quot;</span><span class="fu">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ExpressionAttributeValues&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;:new_member&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;Alice&quot;</span><span class="fu">},</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;:expected_member&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;Bob&quot;</span><span class="fu">}</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>In this operation:</p>
+<ul>
+<li>DynamoDB inspects index <code>2</code> of the
+<code>TeamMembers</code> list.</li>
+<li>If the value at index <code>2</code> is equal to <code>"Bob"</code>,
+DynamoDB replaces it with <code>"Alice"</code>.</li>
+<li>If the value at index <code>2</code> is not <code>"Bob"</code>, or
+if index <code>2</code> does not exist, the operation aborts and throws
+a <code>ConditionalCheckFailedException</code>.</li>
+</ul>
+<h3 id="how-dynamodb-evaluates-conditions-on-list-indices">How DynamoDB
+Evaluates Conditions on List Indices</h3>
+<p>During execution, DynamoDB handles the conditional check
+atomically:</p>
+<ul>
+<li><strong>Checking Value Equality</strong>: If the condition specifies
+<code>ListAttr[i] = :val</code>, DynamoDB checks if index <code>i</code>
+exists and equals <code>:val</code>. If the index is out of bounds, the
+condition evaluates to false.</li>
+<li><strong>Checking Existence</strong>: You can use
+<code>attribute_exists(ListAttr[i])</code> to verify that the list
+contains at least <code>i + 1</code> elements before updating,
+preventing unintended appends or errors.</li>
+<li><strong>Type Safety</strong>: If <code>ListAttr</code> is not
+actually a List (for example, if it is a String or Map), DynamoDB
+returns a <code>ValidationException</code>.</li>
+</ul>
+<h3 id="important-limitations-and-edge-cases">Important Limitations and
+Edge Cases</h3>
+<h4 id="1-index-shifting-and-concurrency">1. Index Shifting and
+Concurrency</h4>
+<p>DynamoDB does not track the identity of elements; it tracks only the
+array index. If concurrent writes remove
+(<code>REMOVE ListAttr[0]</code>) or prepend items to the list, the
+indices of subsequent elements shift immediately. Consequently, an
+operation targeting index <code>2</code> might accidentally evaluate and
+update the wrong logical element unless the
+<code>ConditionExpression</code> explicitly checks the element's unique
+value or identifier.</p>
+<h4 id="2-out-of-bounds-restrictions">2. Out-of-Bounds Restrictions</h4>
+<p>You cannot use <code>SET</code> to write to an index that is strictly
+greater than the current size of the list. For example, if a list
+contains 3 items (indices 0, 1, 2), attempting to update
+<code>ListAttr[4]</code> will fail with a
+<code>ValidationException</code>. You can only append to the immediate
+end of the list using <code>ListAttr[3]</code>.</p>
+<h4 id="3-list-element-deletion">3. List Element Deletion</h4>
+<p>Using <code>REMOVE ListAttr[i]</code> conditionally will delete the
+element at index <code>i</code> and immediately collapse the list,
+shifting all higher-indexed elements down by one position. If a
+condition check fails, the list remains unchanged.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-conditional-updates-on-list-elements-by-index';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

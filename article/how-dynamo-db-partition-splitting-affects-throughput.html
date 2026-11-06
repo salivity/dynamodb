@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Partition Splitting Affects Throughput - dynamodb</title>
+    <meta name="description" content="This article examines the relationship between Amazon DynamoDB partition splitting, throughput allocation, and hot partitions. When DynamoDB splits a partition due to storage growth or high traffic, it fundamentally alters how Read Capacity Units (RCUs) a">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-partition-splitting-affects-throughput">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Partition Splitting Affects Throughput - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-partition-splitting-affects-throughput" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines the relationship between Amazon DynamoDB partition splitting, throughput allocation, and hot partitions. When DynamoDB splits a partition due to storage growth or high traffic, it fundamentally alters how Read Capacity Units (RCUs) a" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-partition-splitting-affects-throughput">How
+DynamoDB Partition Splitting Affects Throughput</h1>
+<p>This article examines the relationship between Amazon DynamoDB
+partition splitting, throughput allocation, and hot partitions. When
+DynamoDB splits a partition due to storage growth or high traffic, it
+fundamentally alters how Read Capacity Units (RCUs) and Write Capacity
+Units (WCUs) are distributed across the underlying physical storage
+nodes. Understanding this process clarifies why partition splitting does
+not inherently resolve performance bottlenecks caused by hot partition
+keys, how adaptive capacity mitigates throughput starvation, and where
+the hard limits of DynamoDB’s scaling model lie.</p>
+<h2 id="understanding-dynamodb-partition-splitting">Understanding
+DynamoDB Partition Splitting</h2>
+<p>DynamoDB stores table data across multiple physical storage units
+called partitions. Each partition has hard capacity constraints:</p>
+<ul>
+<li><strong>Storage Limit:</strong> Up to 10 GB of data.</li>
+<li><strong>Throughput Limit:</strong> Up to 1,000 Write Capacity Units
+(WCUs) and 3,000 Read Capacity Units (RCUs).</li>
+</ul>
+<p>A partition split occurs under two primary conditions:</p>
+<ol type="1">
+<li><strong>Size-based splitting:</strong> The data stored in a single
+partition exceeds 10 GB.</li>
+<li><strong>Throughput-based splitting:</strong> The traffic directed to
+a partition consistently exceeds its maximum hardware allocation (1,000
+WCUs or 3,000 RCUs).</li>
+</ol>
+<p>When a split occurs, DynamoDB allocates an additional partition node
+and divides the hash range (or the items within that hash range) between
+the old and new physical locations.</p>
+<h2 id="throughput-allocation-across-splits">Throughput Allocation
+Across Splits</h2>
+<p>Historically, DynamoDB divided a table's total provisioned throughput
+equally across all partitions. Under this legacy model, if a table had 4
+partitions and 4,000 RCUs, each partition received 1,000 RCUs. If one
+partition split into two, the table now had 5 partitions, effectively
+diluting the baseline throughput of the child partitions to 800 RCUs
+each.</p>
+<p>To fix this structural limitation, DynamoDB introduced
+<strong>Adaptive Capacity</strong>. Adaptive capacity decouples
+throughput distribution from rigid mathematical division. When a
+partition splits:</p>
+<ul>
+<li>The baseline provisioned throughput is still calculated across
+partitions, but DynamoDB dynamically shifts unused capacity from idle
+partitions to busier ones.</li>
+<li>Adaptive capacity responds within seconds, reallocating available
+table-level throughput to meet localized spikes.</li>
+</ul>
+<p>However, adaptive capacity cannot bypass the physical hardware limit
+of a single partition.</p>
+<h2 id="the-impact-on-hot-partitions">The Impact on Hot Partitions</h2>
+<p>A "hot partition" occurs when access patterns disproportionately
+target a specific partition key. The effect of a partition split on a
+hot partition depends directly on the table's primary key design.</p>
+<h3 id="1-simple-primary-key-partition-key-only">1. Simple Primary Key
+(Partition Key Only)</h3>
+<p>In a table with only a partition key (hash key), all items with the
+same partition key must reside on the same physical partition.</p>
+<ul>
+<li><strong>The Split Mechanism:</strong> If a partition splits because
+a single partition key generates extreme traffic, the partition key
+cannot be divided. DynamoDB moves other partition keys to the new child
+partition, isolating the hot partition key on its own dedicated
+partition.</li>
+<li><strong>The Throughput Result:</strong> Splitting does not dilute or
+multiply the capacity of the hot key. The hot key remains constrained by
+the hard ceiling of a single partition: 1,000 WCUs and 3,000 RCUs. If
+the incoming traffic exceeds this limit, the request will be throttled
+regardless of how many times the table splits.</li>
+</ul>
+<h3 id="2-composite-primary-key-partition-key-and-sort-key">2. Composite
+Primary Key (Partition Key and Sort Key)</h3>
+<p>In a table configured with a partition key and a sort key (range
+key), DynamoDB can split data across sort key boundaries.</p>
+<ul>
+<li><strong>The Split Mechanism:</strong> If a single partition key
+contains multiple gigabytes of data or high traffic across a wide range
+of sort keys, DynamoDB can split the sort key range across multiple
+partitions.</li>
+<li><strong>The Throughput Result:</strong> In this scenario, partition
+splitting genuinely improves throughput distribution. Traffic for that
+single partition key is now distributed across multiple physical nodes,
+effectively allowing total operations for that partition key to scale
+beyond the 1,000 WCU / 3,000 RCU limit, provided the traffic accesses
+different sort key ranges.</li>
+</ul>
+<h2 id="potential-bottlenecks-post-split">Potential Bottlenecks
+Post-Split</h2>
+<p>While partition splitting isolates high-traffic data, it can cause
+transient performance issues:</p>
+<ul>
+<li><strong>Cold Partition Allocation:</strong> Immediately following a
+split, adaptive capacity may take a brief period to detect the
+concentrated demand on the new child partition containing the hot key,
+resulting in brief bursts of
+<code>ProvisionedThroughputExceededException</code> errors.</li>
+<li><strong>Global Secondary Index (GSI) Bottlenecks:</strong> A split
+on the base table does not trigger a corresponding split on a GSI. If
+the hot write traffic propagates to an index that has not split, the GSI
+becomes the throttling bottleneck, throttling the base table writes as a
+consequence.</li>
+</ul>
+<h2 id="summary">Summary</h2>
+<p>DynamoDB partition splitting manages storage scaling and isolates
+heavy traffic, but it is not an automatic cure for hot partitions. If
+workload concentration stems from a single partition key without a
+distributed sort key, splitting merely isolates the key to a dedicated
+node capped at 1,000 WCUs and 3,000 RCUs. Resolving hot partition
+bottlenecks ultimately requires application-level strategies, such as
+write sharding, random suffixing, or caching layers, rather than relying
+on partition splits.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-partition-splitting-affects-throughput';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

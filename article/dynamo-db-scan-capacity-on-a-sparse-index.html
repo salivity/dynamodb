@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Scan Capacity on a Sparse Index - dynamodb</title>
+    <meta name="description" content="This article explains how Amazon DynamoDB calculates read capacity unit (RCU) consumption when performing a Scan operation on a sparse secondary index. You will learn the mechanics behind sparse index evaluation, the formula used to compute consumed RCUs,">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-scan-capacity-on-a-sparse-index">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Scan Capacity on a Sparse Index - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-scan-capacity-on-a-sparse-index" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Amazon DynamoDB calculates read capacity unit (RCU) consumption when performing a Scan operation on a sparse secondary index. You will learn the mechanics behind sparse index evaluation, the formula used to compute consumed RCUs," />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-scan-capacity-on-a-sparse-index">DynamoDB Scan Capacity
+on a Sparse Index</h1>
+<p>This article explains how Amazon DynamoDB calculates read capacity
+unit (RCU) consumption when performing a <code>Scan</code> operation on
+a sparse secondary index. You will learn the mechanics behind sparse
+index evaluation, the formula used to compute consumed RCUs, the impact
+of consistency models, and why scanning a sparse index is significantly
+more cost-effective than scanning a full base table.</p>
+<h3 id="the-mechanics-of-a-sparse-index-scan">The Mechanics of a Sparse
+Index Scan</h3>
+<p>In DynamoDB, a secondary index (Global Secondary Index or Local
+Secondary Index) is considered "sparse" when its partition key or sort
+key attributes are not present in every item of the base table. DynamoDB
+only writes an item to the index if that item contains all of the
+attributes defined in the index's primary key schema.</p>
+<p>When you run a <code>Scan</code> operation directly against a
+secondary index, DynamoDB reads exclusively from the index storage. Base
+table items that lack the index keys are never evaluated, stored, or
+processed during the operation. Consequently, capacity calculations only
+account for the items that physically exist inside the sparse index.</p>
+<h3 id="step-by-step-rcu-calculation">Step-by-Step RCU Calculation</h3>
+<p>To calculate the Read Capacity Units consumed by a sparse index
+<code>Scan</code>, DynamoDB follows these distinct steps:</p>
+<ol type="1">
+<li><p><strong>Calculate the Size of Evaluated Items:</strong> DynamoDB
+calculates the size of each item read from the index. The size of an
+indexed item is not the size of the original base table item; instead,
+it consists of:</p>
+<ul>
+<li>The base table’s primary key attributes.</li>
+<li>The index's primary key attributes.</li>
+<li>Any additional attributes projected into the index
+(<code>KEYS_ONLY</code>, <code>INCLUDE</code>, or
+<code>ALL</code>).</li>
+</ul></li>
+<li><p><strong>Sum the Total Data Evaluated:</strong> DynamoDB
+aggregates the sizes of all items evaluated across the scan. If your
+request processes multiple items in a single read call, the total
+payload size is determined by summing the sizes of all items evaluated,
+not by rounding each item individually.</p></li>
+<li><p><strong>Round Up to the Nearest 4 KB Boundary:</strong> DynamoDB
+rounds the cumulative size of evaluated data up to the nearest next 4 KB
+increment. For example, evaluating 6 KB of indexed data rounds up to 8
+KB.</p></li>
+<li><p><strong>Apply Consistency Rules:</strong></p>
+<ul>
+<li><strong>Global Secondary Indexes (GSIs):</strong> GSIs only support
+eventually consistent reads. One RCU provides two eventually consistent
+reads per second for items up to 4 KB in size (equivalent to 1 RCU per 8
+KB of data evaluated).</li>
+<li><strong>Local Secondary Indexes (LSIs):</strong> LSIs support both
+strongly consistent reads (1 RCU per 4 KB) and eventually consistent
+reads (0.5 RCU per 4 KB).</li>
+</ul></li>
+</ol>
+<p><strong>Formula for an Eventually Consistent Scan (Standard
+GSI):</strong> <span class="math display">\[\text{Consumed RCUs} =
+\frac{\lceil \text{Total Evaluated Item Size (in KB)} / 4
+\rceil}{2}\]</span></p>
+<h3 id="the-effect-of-filter-expressions">The Effect of Filter
+Expressions</h3>
+<p>A common point of confusion is how a <code>FilterExpression</code>
+impacts RCU consumption. A <code>FilterExpression</code> is applied only
+<em>after</em> DynamoDB reads the items from the index.</p>
+<p>Even if an item in the sparse index is discarded by your filter and
+not returned to the client application, it was still read from disk.
+Therefore, all items evaluated by the <code>Scan</code> contribute to
+the total data size and consume capacity units, regardless of whether
+they meet the filter criteria.</p>
+<h3 id="throughput-billing-allocation">Throughput Billing
+Allocation</h3>
+<p>Capacity consumed by scanning a sparse index is billed against the
+index itself, not the base table:</p>
+<ul>
+<li>For a <strong>GSI</strong>, the consumed RCUs deduct directly from
+the provisioned or on-demand read capacity assigned to that specific
+GSI.</li>
+<li>For an <strong>LSI</strong>, read capacity is deducted from the base
+table’s read throughput capacity, as LSIs share throughput with the base
+table.</li>
+</ul>
+<p>Because sparse indexes contain a reduced subset of records and
+smaller projected attribute footprints, scanning a sparse index
+minimizes the total evaluated bytes, leading to lower capacity unit
+consumption compared to scanning the base table.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-scan-capacity-on-a-sparse-index';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

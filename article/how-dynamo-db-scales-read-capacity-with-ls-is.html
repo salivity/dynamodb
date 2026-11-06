@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Scales Read Capacity with LSIs - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, Local Secondary Indexes (LSIs) do not have their own dedicated throughput; instead, they share the read and write capacity provisioned for the base table. Scaling read capacity for an LSI is therefore achieved entirely through the capa">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-scales-read-capacity-with-ls-is">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Scales Read Capacity with LSIs - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-scales-read-capacity-with-ls-is" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, Local Secondary Indexes (LSIs) do not have their own dedicated throughput; instead, they share the read and write capacity provisioned for the base table. Scaling read capacity for an LSI is therefore achieved entirely through the capa" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-scales-read-capacity-with-lsis">How DynamoDB Scales
+Read Capacity with LSIs</h1>
+<p>In Amazon DynamoDB, Local Secondary Indexes (LSIs) do not have their
+own dedicated throughput; instead, they share the read and write
+capacity provisioned for the base table. Scaling read capacity for an
+LSI is therefore achieved entirely through the capacity management of
+the parent table, whether managed via On-Demand mode, provisioned
+capacity with Auto Scaling, or manual adjustments. Understanding this
+shared capacity model, along with read consistency choices and partition
+limits, is essential for maintaining performance and avoiding throttling
+when querying LSIs.</p>
+<h3 id="the-shared-capacity-architecture">The Shared Capacity
+Architecture</h3>
+<p>Unlike Global Secondary Indexes (GSIs), which maintain independent
+read and write capacity allocations, an LSI always consumes the Read
+Capacity Units (RCUs) of the underlying base table. When an application
+queries or scans an LSI, DynamoDB deducts the necessary RCUs directly
+from the base table’s allocated pool.</p>
+<p>Because capacity is shared, any operation scaling the base table
+directly scales the available throughput for its LSIs:</p>
+<ul>
+<li><strong>On-Demand Capacity Mode:</strong> DynamoDB automatically
+scales read throughput up or down based on incoming request volume. When
+queries to an LSI surge, DynamoDB accommodates the traffic instantly
+without manual configuration, billing read request units against the
+base table.</li>
+<li><strong>Provisioned Capacity with Auto Scaling:</strong> DynamoDB
+Auto Scaling dynamically modifies the base table's provisioned RCUs in
+response to CloudWatch metrics. As query volume on the LSI increases,
+the overall table utilization rises, triggering an automatic scale-up of
+the base table's read capacity.</li>
+<li><strong>Manual Provisioning:</strong> Administrators can manually
+increase the base table's RCU threshold to provide sufficient headroom
+for expected spikes in LSI read operations.</li>
+</ul>
+<h3 id="factors-affecting-lsi-read-capacity-consumption">Factors
+Affecting LSI Read Capacity Consumption</h3>
+<p>The actual rate at which an LSI consumes read capacity depends on
+consistency settings and attribute projection:</p>
+<ul>
+<li><strong>Read Consistency:</strong> LSIs support both eventually
+consistent and strongly consistent reads. An eventually consistent read
+consumes 0.5 RCUs for items up to 4 KB, whereas a strongly consistent
+read consumes 1 RCU for items up to 4 KB. Selecting the appropriate
+consistency model directly halves or doubles read capacity consumption
+on the base table.</li>
+<li><strong>Attribute Projections:</strong> An LSI can project
+<code>KEYS_ONLY</code>, <code>INCLUDE</code> (specific attributes), or
+<code>ALL</code> base table attributes. If a query requests attributes
+that are not projected into the LSI, DynamoDB must perform an additional
+read against the base table to fetch the missing data. This action
+incurs extra RCU consumption, doubling the read cost for that
+query.</li>
+</ul>
+<h3 id="partition-constraints-and-adaptive-capacity">Partition
+Constraints and Adaptive Capacity</h3>
+<p>An LSI uses the same partition key as the base table, grouping data
+into what DynamoDB calls an "item collection." While overall read
+capacity scales with the base table, individual partitions have hard
+performance boundaries:</p>
+<ul>
+<li><strong>Partition Limits:</strong> A single partition in DynamoDB
+can supply a maximum of 3,000 RCUs. Because all LSI items with the same
+partition key reside on the same storage node as the base item, queries
+targeting an LSI for a specific partition key draw from that partition's
+3,000 RCU limit.</li>
+<li><strong>Adaptive Capacity:</strong> If read operations
+disproportionately target a specific LSI partition, DynamoDB’s adaptive
+capacity feature automatically allocates unused capacity from other
+partitions to the high-traffic partition to prevent throttling, provided
+the total traffic does not exceed the single-partition physical
+ceiling.</li>
+<li><strong>Item Collection Size Limit:</strong> Any table with one or
+more LSIs imposes a strict 10 GB limit per item collection (all base
+table items and LSI items sharing a single partition key). Exceeding
+this boundary halts further writes, though reads remain operational up
+to partition throughput limits.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-scales-read-capacity-with-ls-is';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

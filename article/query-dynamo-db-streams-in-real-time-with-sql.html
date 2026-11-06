@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Query DynamoDB Streams in Real Time with SQL - dynamodb</title>
+    <meta name="description" content="Amazon Kinesis Data Analytics is the dedicated AWS service that allows developers to run real-time analysis on Amazon DynamoDB data streams using standard SQL queries. By routing DynamoDB change data capture (CDC) records to Amazon Kinesis, organizations">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/query-dynamo-db-streams-in-real-time-with-sql">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Query DynamoDB Streams in Real Time with SQL - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/query-dynamo-db-streams-in-real-time-with-sql" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon Kinesis Data Analytics is the dedicated AWS service that allows developers to run real-time analysis on Amazon DynamoDB data streams using standard SQL queries. By routing DynamoDB change data capture (CDC) records to Amazon Kinesis, organizations" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="query-dynamodb-streams-in-real-time-with-sql">Query DynamoDB
+Streams in Real Time with SQL</h1>
+<p>Amazon Kinesis Data Analytics is the dedicated AWS service that
+allows developers to run real-time analysis on Amazon DynamoDB data
+streams using standard SQL queries. By routing DynamoDB change data
+capture (CDC) records to Amazon Kinesis, organizations can continuously
+process, aggregate, and transform incoming database mutations without
+managing dedicated server infrastructure. This article details how
+Amazon Kinesis Data Analytics integrates with DynamoDB and how SQL
+queries execute over streaming events.</p>
+<h2 id="the-solution-amazon-kinesis-data-analytics">The Solution: Amazon
+Kinesis Data Analytics</h2>
+<p>Amazon Kinesis Data Analytics provides an ANSI-standard SQL interface
+to analyze streaming data in real time. While Amazon DynamoDB Streams
+captures time-ordered sequences of item-level modifications, integrating
+DynamoDB with Amazon Kinesis Data Streams allows Kinesis Data Analytics
+to directly ingest and evaluate this event log using continuous SQL
+queries.</p>
+<h2 id="architecture-and-workflow">Architecture and Workflow</h2>
+<p>To analyze DynamoDB data using SQL in real time, the standard AWS
+architecture follows a three-stage pipeline:</p>
+<ol type="1">
+<li><strong>Streaming Capture:</strong> Enable the native Amazon Kinesis
+Data Streams integration for DynamoDB. This feature automatically sends
+all item creates, updates, and deletes directly to a designated Kinesis
+Data Stream without requiring custom AWS Lambda integration.</li>
+<li><strong>Real-Time Processing:</strong> Configure Amazon Kinesis Data
+Analytics to use the Kinesis Data Stream as an application input. The
+service continuously reads the streaming records, infers or maps the
+schema, and creates in-application data streams.</li>
+<li><strong>Continuous SQL Execution:</strong> Write standard SQL
+queries to continuously process records from the in-application stream.
+These queries can filter events, join streams, or calculate aggregations
+over sliding, tumbling, or session time windows.</li>
+<li><strong>Destination Routing:</strong> Route query results from
+in-application output streams to downstream services such as Amazon S3,
+Amazon OpenSearch Service, Amazon Redshift, or AWS Lambda for alerting,
+storage, or dashboarding.</li>
+</ol>
+<h2 id="key-capabilities-of-sql-on-streaming-dynamodb-data">Key
+Capabilities of SQL on Streaming DynamoDB Data</h2>
+<ul>
+<li><strong>Windowed Aggregations:</strong> Run calculations over
+specific time frames, such as computing average order values or tracking
+user login attempts over a rolling five-minute period.</li>
+<li><strong>Stream Filtering:</strong> Immediately isolate critical
+changes, such as high-value transactions or error states, by applying
+standard <code>WHERE</code> clauses to the continuous stream.</li>
+<li><strong>Anomaly Detection:</strong> Utilize built-in SQL functions,
+such as <code>RANDOM_CUT_FOREST</code>, to detect statistical outliers
+in real-time numeric data emitted by DynamoDB.</li>
+<li><strong>Serverless Scalability:</strong> The underlying runtime
+automatically scales up or down based on stream volume, ensuring
+low-latency processing without manual capacity planning.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/query-dynamo-db-streams-in-real-time-with-sql';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Manages Encryption Key Rotation - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages server-side encryption (SSE) key rotation through its tight integration with AWS Key Management Service (AWS KMS). Depending on the type of encryption key selected for a table—an AWS owned key, an AWS managed key, or a customer man">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-encryption-key-rotation">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Manages Encryption Key Rotation - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-encryption-key-rotation" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages server-side encryption (SSE) key rotation through its tight integration with AWS Key Management Service (AWS KMS). Depending on the type of encryption key selected for a table—an AWS owned key, an AWS managed key, or a customer man" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-manages-encryption-key-rotation">How DynamoDB
+Manages Encryption Key Rotation</h1>
+<p>Amazon DynamoDB manages server-side encryption (SSE) key rotation
+through its tight integration with AWS Key Management Service (AWS KMS).
+Depending on the type of encryption key selected for a table—an AWS
+owned key, an AWS managed key, or a customer managed key (CMK)—DynamoDB
+handles key rotation either automatically behind the scenes or under the
+user's explicit policy configuration. Importantly, when a key rotates,
+DynamoDB does not immediately re-encrypt existing data; instead, it uses
+the new key version for subsequent writes while retaining the ability to
+decrypt older data using prior key versions.</p>
+<h3 id="encryption-key-types-and-rotation-behaviors">Encryption Key
+Types and Rotation Behaviors</h3>
+<p>DynamoDB supports three key types for server-side encryption, each
+handling rotation differently:</p>
+<ul>
+<li><strong>AWS Owned Keys:</strong> These keys are entirely maintained
+and operated by DynamoDB. AWS automatically rotates the cryptographic
+material on a regular internal schedule. Users do not incur additional
+AWS KMS charges for these keys, nor do they have visibility or control
+over when rotation occurs.</li>
+<li><strong>AWS Managed Keys (<code>aws/dynamodb</code>):</strong> These
+keys reside in your account and are managed by AWS KMS on behalf of
+DynamoDB. AWS KMS automatically rotates the underlying key material for
+AWS managed keys once every year (approximately every 365 days). Users
+cannot disable or alter the rotation schedule for this key type.</li>
+<li><strong>Customer Managed Keys (CMKs):</strong> These keys are
+created, owned, and configured by you in AWS KMS. With CMKs, you control
+rotation. You can enable automatic key rotation, which allows AWS KMS to
+generate new key material at a user-defined interval (between 90 and
+2,560 days, with 365 days as the default). Alternatively, you can
+perform manual rotation by creating a new CMK and updating your DynamoDB
+table settings to use the new key ARN.</li>
+</ul>
+<h3 id="the-mechanics-of-envelope-encryption-during-rotation">The
+Mechanics of Envelope Encryption During Rotation</h3>
+<p>DynamoDB uses envelope encryption to protect data efficiently at
+scale. Under this model, the AWS KMS key protects a hierarchy of keys
+rather than encrypting every individual table item directly:</p>
+<ol type="1">
+<li><strong>Backing Key Material:</strong> When automatic rotation is
+enabled for a KMS key, AWS KMS creates new cryptographic backing
+material. The key's metadata, identity, and Amazon Resource Name (ARN)
+remain identical.</li>
+<li><strong>No Full Table Re-Encryption:</strong> When a key rotates,
+DynamoDB does not read and re-write all existing records on disk.
+Re-encrypting multi-terabyte datasets immediately would cause
+unacceptable performance overhead and API throttling.</li>
+<li><strong>New Writes:</strong> New data written to the DynamoDB table
+is encrypted using fresh data encryption keys (DEKs) generated from the
+newly active KMS key material.</li>
+<li><strong>Reads and Decryption:</strong> AWS KMS retains all
+historical versions of a key's backing material. When DynamoDB reads an
+item that was encrypted prior to the rotation, KMS uses the specific
+version of the key material that originally generated the item's DEK to
+decrypt it seamlessly.</li>
+</ol>
+<p>Because the key ARN remains constant during automatic rotation,
+applications reading from and writing to DynamoDB require no
+configuration updates, code modifications, or downtime when key material
+rotates.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-encryption-key-rotation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

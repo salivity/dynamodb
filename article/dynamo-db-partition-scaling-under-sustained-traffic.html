@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Scaling Under Sustained Traffic - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB automatically accommodates sustained increases in application traffic by dynamically creating and redistributing database partitions to maintain low-latency performance. When read or write demands consistently surpass the limits of existin">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-scaling-under-sustained-traffic">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Scaling Under Sustained Traffic - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-scaling-under-sustained-traffic" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB automatically accommodates sustained increases in application traffic by dynamically creating and redistributing database partitions to maintain low-latency performance. When read or write demands consistently surpass the limits of existin" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-scaling-under-sustained-traffic">DynamoDB
+Partition Scaling Under Sustained Traffic</h1>
+<p>Amazon DynamoDB automatically accommodates sustained increases in
+application traffic by dynamically creating and redistributing database
+partitions to maintain low-latency performance. When read or write
+demands consistently surpass the limits of existing partitions, DynamoDB
+splits those partitions, allocates throughput, and leverages internal
+mechanisms like adaptive capacity to balance workloads. Understanding
+how this automatic scaling behaves over time is essential for designing
+resilient schemas and preventing performance bottlenecks.</p>
+<h3 id="fundamentals-of-dynamodb-partitions">Fundamentals of DynamoDB
+Partitions</h3>
+<p>DynamoDB stores table data across physical storage units known as
+partitions, which are managed automatically by AWS. A single partition
+has fixed upper thresholds:</p>
+<ul>
+<li>A maximum storage capacity of 10 GB.</li>
+<li>A throughput limit of 1,000 Write Capacity Units (WCU).</li>
+<li>A throughput limit of 3,000 Read Capacity Units (RCU).</li>
+</ul>
+<p>When a table is created, DynamoDB allocates an initial number of
+partitions based on the requested provisioned throughput or the initial
+data size.</p>
+<h3 id="how-dynamodb-detects-and-handles-sustained-increases">How
+DynamoDB Detects and Handles Sustained Increases</h3>
+<p>When traffic increases gradually or remains high over an extended
+period, DynamoDB reacts through a series of automated scaling steps:</p>
+<h4 id="1-adaptive-capacity-intervention">1. Adaptive Capacity
+Intervention</h4>
+<p>DynamoDB uses adaptive capacity to address short-term spikes and
+uneven traffic patterns. If an individual partition experiences
+disproportionate traffic (a "hot" partition), adaptive capacity
+instantly draws unused throughput from quieter partitions to satisfy the
+demand without throttling, provided the total table throughput is not
+exceeded.</p>
+<h4 id="2-partition-splitting">2. Partition Splitting</h4>
+<p>If the sustained demand on a single partition approaches or exceeds
+physical hardware limits (1,000 WCU or 3,000 RCU) over time, or if
+table-wide provisioned or on-demand throughput increases beyond the sum
+of existing partition maximums, DynamoDB triggers a partition split.</p>
+<p>During a split:</p>
+<ul>
+<li>The original partition's key space is divided into two halves.</li>
+<li>The data belonging to each half is migrated to two distinct, newly
+allocated partitions.</li>
+<li>The throughput previously assigned to the original partition is now
+split evenly between the two child partitions.</li>
+<li>The operation occurs asynchronously in the background with zero
+downtime and no impact on availability.</li>
+</ul>
+<h4 id="3-scaling-in-on-demand-vs-provisioned-modes">3. Scaling in
+On-Demand vs. Provisioned Modes</h4>
+<ul>
+<li><strong>On-Demand Mode:</strong> DynamoDB tracks previous traffic
+peaks. If sustained traffic doubles the previous peak, the system
+immediately scales by splitting partitions to establish a new
+performance baseline. It accommodates up to double the previous peak
+instantly, while splitting partitions behind the scenes to prepare for
+higher sustained volume.</li>
+<li><strong>Provisioned Capacity Mode:</strong> Increasing the table’s
+provisioned RCU or WCU settings triggers partition provisioning if the
+total required capacity exceeds the aggregate capacity of the existing
+partitions.</li>
+</ul>
+<h3 id="long-term-behavior-of-partition-scaling">Long-Term Behavior of
+Partition Scaling</h3>
+<p>As sustained traffic increases over weeks or months, the table’s
+partition count scales upward. Key characteristics of long-term
+partition behavior include:</p>
+<ul>
+<li><strong>Partitions Do Not Automatically Merge Down:</strong>
+Historically, as a table scales up its partition count to satisfy peak
+sustained workloads, those partitions remain in place even if traffic
+later declines. The table maintains the higher partition count to ensure
+it can handle return traffic without re-triggering partition
+splits.</li>
+<li><strong>Uniform Key Distribution Becomes Critical:</strong> Because
+overall provisioned throughput is distributed across all partitions,
+having a large number of partitions means each individual partition
+receives a smaller slice of base throughput. Although adaptive capacity
+helps mitigate this, high-cardinality partition keys remain critical to
+distribute traffic evenly across the expanded partition fleet.</li>
+<li><strong>Global Secondary Indexes (GSIs):</strong> GSIs scale their
+partitions independently of the base table. Sustained traffic on queries
+targeting a GSI will cause the index's partitions to split independently
+to match read and write demands.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-scaling-under-sustained-traffic';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

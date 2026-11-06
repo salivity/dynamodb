@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automated Threat Detection for AWS DynamoDB - dynamodb</title>
+    <meta name="description" content="Amazon GuardDuty is the dedicated AWS service that provides intelligent, automated threat detection for Amazon DynamoDB tables through its feature called GuardDuty DynamoDB Protection. By continuously monitoring and analyzing DynamoDB data-plane API activ">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/automated-threat-detection-for-aws-dynamo-db">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Automated Threat Detection for AWS DynamoDB - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/automated-threat-detection-for-aws-dynamo-db" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon GuardDuty is the dedicated AWS service that provides intelligent, automated threat detection for Amazon DynamoDB tables through its feature called GuardDuty DynamoDB Protection. By continuously monitoring and analyzing DynamoDB data-plane API activ" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="automated-threat-detection-for-aws-dynamodb">Automated Threat
+Detection for AWS DynamoDB</h1>
+<p>Amazon GuardDuty is the dedicated AWS service that provides
+intelligent, automated threat detection for Amazon DynamoDB tables
+through its feature called GuardDuty DynamoDB Protection. By
+continuously monitoring and analyzing DynamoDB data-plane API activity,
+GuardDuty identifies potential security risks such as credential
+compromise, data exfiltration, and unauthorized access patterns without
+impacting database performance or requiring operational overhead.</p>
+<h3 id="how-guardduty-dynamodb-protection-works">How GuardDuty DynamoDB
+Protection Works</h3>
+<p>Amazon GuardDuty uses machine learning, anomaly detection algorithms,
+and integrated threat intelligence feeds to monitor data-plane events
+across your DynamoDB tables. It specifically evaluates requests such as
+<code>Scan</code>, <code>Query</code>, <code>GetItem</code>,
+<code>PutItem</code>, and <code>DeleteItem</code> to establish a
+baseline of normal behavior for each user, role, and application.</p>
+<p>When anomalous activity occurs—such as a request originating from an
+unknown IP address, a known malicious actor, or a TOR exit
+node—GuardDuty flags the behavior and generates a detailed security
+finding.</p>
+<h3 id="key-threats-detected-in-dynamodb">Key Threats Detected in
+DynamoDB</h3>
+<p>GuardDuty identifies several critical security issues targeting
+DynamoDB, including:</p>
+<ul>
+<li><strong>Compromised Credentials:</strong> Detects when IAM
+credentials are used to access database records from unusual network
+locations or unexpected client applications.</li>
+<li><strong>Data Exfiltration:</strong> Flags unusual bulk data-access
+requests, such as an unprecedented number of <code>Scan</code> or
+<code>Query</code> calls that deviate from established operational
+patterns.</li>
+<li><strong>Malicious Actor Access:</strong> Alerts when API calls to
+DynamoDB tables are made from IP addresses associated with known threat
+actors, proxies, or scanning tools.</li>
+</ul>
+<h3 id="operational-advantages">Operational Advantages</h3>
+<ul>
+<li><strong>Zero Performance Impact:</strong> GuardDuty monitors
+data-plane API calls independently of database operations, meaning it
+does not introduce latency or consume DynamoDB read/write capacity
+units.</li>
+<li><strong>No Agent Installation:</strong> The service is fully managed
+and serverless; there are no agents or sensors to deploy or
+maintain.</li>
+<li><strong>Automated Remediation:</strong> GuardDuty integrates
+natively with Amazon EventBridge and AWS Security Hub. This allows
+security teams to trigger automated response workflows, such as
+automatically revoking compromised IAM credentials or notifying security
+administrators via Amazon SNS.</li>
+</ul>
+<h3 id="enabling-dynamodb-protection">Enabling DynamoDB Protection</h3>
+<p>DynamoDB Protection can be enabled directly within the Amazon
+GuardDuty console or via the AWS CLI and AWS CloudFormation. For
+existing GuardDuty users, DynamoDB Protection can be activated under the
+"Protection plans" section of the GuardDuty configuration settings
+across single accounts or organization-wide through AWS
+Organizations.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/automated-threat-detection-for-aws-dynamo-db';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Transaction Conflict Error Explained - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides ACID transaction guarantees through transactional read and write operations, but concurrent operations on the same items can lead to contention. When a transaction request collides with another ongoing transaction, DynamoDB denies">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-conflict-error-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Transaction Conflict Error Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-conflict-error-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides ACID transaction guarantees through transactional read and write operations, but concurrent operations on the same items can lead to contention. When a transaction request collides with another ongoing transaction, DynamoDB denies" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-transaction-conflict-error-explained">DynamoDB
+Transaction Conflict Error Explained</h1>
+<p>Amazon DynamoDB provides ACID transaction guarantees through
+transactional read and write operations, but concurrent operations on
+the same items can lead to contention. When a transaction request
+collides with another ongoing transaction, DynamoDB denies the request
+and returns a specific conflict error. This guide explains the exact
+error code returned during transaction conflicts, the underlying causes,
+and practical strategies to handle and prevent them in your
+applications.</p>
+<h2 id="the-conflict-error-code-transactionconflictexception">The
+Conflict Error Code: TransactionConflictException</h2>
+<p>When a DynamoDB transaction request conflicts with another active
+transaction on the same item, DynamoDB returns the
+<strong><code>TransactionConflictException</code></strong> error code
+(HTTP status code 400).</p>
+<p>In multi-item write requests using the
+<code>TransactWriteItems</code> API, DynamoDB may also return a
+<strong><code>TransactionCanceledException</code></strong>. In this
+case, the response includes a <code>CancellationReasons</code> array
+containing individual reasons for each operation in the request; any
+operation that clashed with an active transaction will display the
+reason code <strong><code>TransactionConflict</code></strong>.</p>
+<h2 id="why-transaction-conflicts-occur">Why Transaction Conflicts
+Occur</h2>
+<p>DynamoDB uses an optimistic concurrency model for transactions. A
+conflict arises when two or more transactions attempt to access or
+modify the same underlying item simultaneously:</p>
+<ul>
+<li><strong>Simultaneous Writes:</strong> Two different
+<code>TransactWriteItems</code> calls attempt to modify, delete, or
+create the same item at the same time.</li>
+<li><strong>Read-Write Collisions:</strong> A
+<code>TransactGetItems</code> operation reads an item that is
+concurrently targeted by a <code>TransactWriteItems</code> operation, or
+vice versa.</li>
+<li><strong>Non-Transactional Interference:</strong> A standard write
+operation (such as <code>PutItem</code>, <code>UpdateItem</code>, or
+<code>DeleteItem</code>) occurs on an item while that same item is part
+of an in-flight transactional operation.</li>
+</ul>
+<p>Because DynamoDB uses two-phase commit protocols under the hood,
+items involved in a transaction are temporarily locked. If an incoming
+transaction cannot acquire the necessary locks before timeout, the
+request fails with a conflict error.</p>
+<h2 id="how-to-handle-and-prevent-transaction-conflicts">How to Handle
+and Prevent Transaction Conflicts</h2>
+<p>Because transactional conflicts are transient client-side errors,
+your application architecture should be designed to handle them
+gracefully:</p>
+<h3 id="1-implement-exponential-backoff-and-jitter">1. Implement
+Exponential Backoff and Jitter</h3>
+<p>The primary mechanism for managing
+<code>TransactionConflictException</code> is retrying the request. When
+retrying, use an exponential backoff algorithm combined with randomized
+jitter. Jitter prevents multiple client instances from retrying at
+identical intervals, avoiding recurring lock collisions.</p>
+<h3 id="2-keep-transactions-small">2. Keep Transactions Small</h3>
+<p>Transactions should only include the minimum number of items
+necessary. Grouping unrelated items into a single transaction increases
+lock contention and the probability of encountering a conflict.</p>
+<h3 id="3-evaluate-the-need-for-transactions">3. Evaluate the Need for
+Transactions</h3>
+<p>DynamoDB's standard operations (<code>UpdateItem</code>,
+<code>PutItem</code>) support conditional expressions and atomic
+counters. If your workload does not strictly require coordinated,
+multi-item atomicity across distinct keys, standard operations eliminate
+transaction-locking overhead entirely.</p>
+<h3 id="4-separate-read-and-write-paths">4. Separate Read and Write
+Paths</h3>
+<p>Avoid reading items within a <code>TransactGetItems</code> call if
+transactional consistency across multiple items is not mandatory. Using
+standard <code>GetItem</code> or <code>BatchGetItem</code> reads avoids
+participating in transaction-lock coordination.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-transaction-conflict-error-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Handles Null and Empty String Values - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB enforces specific rules regarding how it stores and indexes empty strings and null values. While older versions of the database imposed strict limitations on empty strings, DynamoDB now natively supports empty string values across non-key">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-null-and-empty-string-values">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Handles Null and Empty String Values - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-null-and-empty-string-values" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB enforces specific rules regarding how it stores and indexes empty strings and null values. While older versions of the database imposed strict limitations on empty strings, DynamoDB now natively supports empty string values across non-key" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-handles-null-and-empty-string-values">How DynamoDB
+Handles Null and Empty String Values</h1>
+<p>Amazon DynamoDB enforces specific rules regarding how it stores and
+indexes empty strings and null values. While older versions of the
+database imposed strict limitations on empty strings, DynamoDB now
+natively supports empty string values across non-key and key attributes,
+alongside an explicit <code>NULL</code> scalar data type. This article
+details how DynamoDB processes these two data states, highlights key
+restrictions for primary keys and secondary indexes, and explains the
+behavior of set and document types.</p>
+<h2 id="the-explicit-null-data-type">The Explicit NULL Data Type</h2>
+<p>DynamoDB provides a dedicated scalar data type for null:
+<code>NULL</code>. In low-level DynamoDB JSON format, this is
+represented as:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;AttributeName&quot;</span><span class="er">:</span> <span class="fu">{</span> <span class="dt">&quot;NULL&quot;</span><span class="fu">:</span> <span class="kw">true</span> <span class="fu">}</span></span></code></pre></div>
+<p>A <code>NULL</code> attribute represents an unknown, undefined, or
+missing state for a non-key attribute. It is distinct from an empty
+string (<code>""</code>) or an empty collection.</p>
+<h2 id="empty-string-support">Empty String Support</h2>
+<p>Historically, DynamoDB rejected empty string values (<code>""</code>)
+for String (<code>S</code>) attributes, throwing a
+<code>ValidationException</code>. In May 2020, AWS updated DynamoDB to
+natively support empty strings in String attributes.</p>
+<p>An empty string is stored as a valid String type with a length of
+zero:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;AttributeName&quot;</span><span class="er">:</span> <span class="fu">{</span> <span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;&quot;</span> <span class="fu">}</span></span></code></pre></div>
+<p>Empty strings are fully supported in non-key attributes, Maps, and
+Lists.</p>
+<h2 id="rules-for-primary-keys-partition-and-sort-keys">Rules for
+Primary Keys (Partition and Sort Keys)</h2>
+<p>The handling of null and empty values differs significantly when
+applied to primary key attributes:</p>
+<ul>
+<li><strong>Empty Strings as Keys:</strong> DynamoDB allows empty
+strings to serve as partition keys and sort keys. However, using an
+empty string as a partition key is generally considered an anti-pattern
+because it concentrates records onto a single partition, potentially
+leading to hot partition throttling.</li>
+<li><strong>NULL as Keys:</strong> DynamoDB strictly prohibits the
+<code>NULL</code> data type as a partition key or a sort key. Primary
+keys must be of type String (<code>S</code>), Number (<code>N</code>),
+or Binary (<code>B</code>). If an item requires a null-like state for a
+key, the attribute must instead be populated with a predefined
+placeholder value (such as <code>"UNKNOWN"</code> or
+<code>"N/A"</code>).</li>
+</ul>
+<h2 id="behavior-in-global-and-local-secondary-indexes">Behavior in
+Global and Local Secondary Indexes</h2>
+<p>Secondary indexes follow the same data type rules as base table
+keys:</p>
+<ul>
+<li><strong>GSI/LSI Keys:</strong> Secondary index partition and sort
+keys can be empty strings, but they cannot use the <code>NULL</code>
+data type.</li>
+<li><strong>Sparse Indexing:</strong> In DynamoDB, secondary indexes are
+sparse by default. If an item completely omits the attribute used as an
+index key, that item is not indexed. Storing an empty string
+(<code>""</code>) in an index key attribute will cause the item to be
+indexed. Storing a <code>NULL</code> data type in that attribute will
+cause the write operation to fail if that attribute acts as an index
+key.</li>
+</ul>
+<h2 id="complex-and-set-types">Complex and Set Types</h2>
+<p>DynamoDB applies distinct validation rules for collections and
+complex data structures:</p>
+<ul>
+<li><strong>Sets (<code>SS</code>, <code>NS</code>,
+<code>BS</code>):</strong> Sets cannot be empty. A String Set
+(<code>SS</code>) must contain at least one element. While an individual
+element within a String Set can be an empty string, the set itself
+cannot exist with zero elements.</li>
+<li><strong>Lists (<code>L</code>) and Maps (<code>M</code>):</strong>
+Unlike sets, lists and maps can be completely empty (represented as
+<code>[]</code> and <code>{}</code>). Lists can also contain
+<code>NULL</code> data types and empty strings as valid elements.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-null-and-empty-string-values';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

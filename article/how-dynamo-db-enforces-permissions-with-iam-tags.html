@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Enforces Permissions with IAM Tags - dynamodb</title>
+    <meta name="description" content="This article explains how Amazon DynamoDB leverages AWS Identity and Access Management (IAM) tags to enforce permission boundaries and access controls. By adopting Attribute-Based Access Control (ABAC), administrators can define fine-grained security poli">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-permissions-with-iam-tags">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Enforces Permissions with IAM Tags - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-permissions-with-iam-tags" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Amazon DynamoDB leverages AWS Identity and Access Management (IAM) tags to enforce permission boundaries and access controls. By adopting Attribute-Based Access Control (ABAC), administrators can define fine-grained security poli" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-enforces-permissions-with-iam-tags">How DynamoDB
+Enforces Permissions with IAM Tags</h1>
+<p>This article explains how Amazon DynamoDB leverages AWS Identity and
+Access Management (IAM) tags to enforce permission boundaries and access
+controls. By adopting Attribute-Based Access Control (ABAC),
+administrators can define fine-grained security policies where access to
+DynamoDB tables and operations is dynamically governed by matching the
+tags attached to IAM principals with the tags assigned to DynamoDB
+resources.</p>
+<h2 id="attribute-based-access-control-abac-in-dynamodb">Attribute-Based
+Access Control (ABAC) in DynamoDB</h2>
+<p>DynamoDB integrates natively with IAM's policy evaluation engine to
+evaluate resource tags, request tags, and principal tags during API
+calls. Instead of listing specific Amazon Resource Names (ARNs) inside
+an IAM policy, access is determined by matching key-value pairs (tags).
+When an identity attempts an operation on a DynamoDB resource, IAM
+evaluates the identity's permission boundary and policies against the
+tags present on both the caller and the target resource.</p>
+<h2 id="key-iam-condition-keys-used-for-tag-enforcement">Key IAM
+Condition Keys Used for Tag Enforcement</h2>
+<p>DynamoDB relies on global and service-specific IAM condition keys to
+validate tags:</p>
+<ul>
+<li><strong><code>aws:ResourceTag/${TagKey}</code></strong>: Compares
+the tag key and value attached to the DynamoDB resource (such as a
+table) with the value defined in the IAM policy.</li>
+<li><strong><code>aws:PrincipalTag/${TagKey}</code></strong>: Represents
+the tag attached to the IAM user or role making the request. It allows
+administrators to enforce rules such as: <em>Allow access only if the
+principal's <code>Environment</code> tag matches the table's
+<code>Environment</code> tag.</em></li>
+<li><strong><code>aws:RequestTag/${TagKey}</code></strong>: Checks the
+tags passed in the request payload when creating a resource
+(<code>dynamodb:CreateTable</code>) or applying new tags
+(<code>dynamodb:TagResource</code>).</li>
+<li><strong><code>aws:TagKeys</code></strong>: Restricts which specific
+tag keys can be added, updated, or removed in a request.</li>
+</ul>
+<h2 id="enforcing-table-level-access-through-tag-matching">Enforcing
+Table-Level Access Through Tag Matching</h2>
+<p>DynamoDB uses the <code>aws:ResourceTag</code> and
+<code>aws:PrincipalTag</code> keys to restrict data-plane and
+control-plane actions:</p>
+<ol type="1">
+<li><p><strong>Direct Resource Tag Matching</strong>: A policy allows
+operations like <code>dynamodb:GetItem</code>,
+<code>dynamodb:PutItem</code>, or <code>dynamodb:UpdateTable</code> only
+when the target table contains a specific tag, such as
+<code>Environment = Production</code>.</p></li>
+<li><p><strong>Dynamic Principal-to-Resource Matching</strong>: Policies
+can use policy variables, such as:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;Condition&quot;</span><span class="er">:</span> <span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;StringEquals&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;aws:ResourceTag/Department&quot;</span><span class="fu">:</span> <span class="st">&quot;${aws:PrincipalTag/Department}&quot;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Under this rule, if an engineer with
+<code>Department = Finance</code> calls <code>dynamodb:Query</code> on a
+table tagged <code>Department = Engineering</code>, DynamoDB rejects the
+request.</p></li>
+</ol>
+<h2 id="enforcing-tagging-compliance-at-creation">Enforcing Tagging
+Compliance at Creation</h2>
+<p>To prevent untagged or improperly tagged resources from bypassing
+boundaries, IAM policies use <code>aws:RequestTag</code> combined with a
+<code>Deny</code> effect.</p>
+<p>When a user calls <code>dynamodb:CreateTable</code>, the policy
+verifies that mandatory tags (such as <code>Owner</code>,
+<code>CostCenter</code>, or <code>DataClassification</code>) are
+included in the request. If the required tags are absent or do not meet
+allowed criteria, the request fails before the DynamoDB table is
+provisioned.</p>
+<h2 id="preventing-privilege-escalation-via-tag-tampering">Preventing
+Privilege Escalation via Tag Tampering</h2>
+<p>Because permissions depend on tags, unauthorized modification of tags
+could allow an attacker to gain access to restricted DynamoDB tables.
+DynamoDB enforces security boundaries by separating tagging
+permissions:</p>
+<ul>
+<li><strong>Restricting <code>dynamodb:TagResource</code></strong>: IAM
+policies restrict who can apply new tags or change existing tags on
+DynamoDB tables.</li>
+<li><strong>Restricting <code>dynamodb:UntagResource</code></strong>:
+Policies block the removal of existing tags used for access
+control.</li>
+<li><strong>Condition-Based Tag Modification</strong>: Using
+<code>aws:TagKeys</code>, administrators ensure that users cannot add,
+modify, or delete sensitive security tags used for authorization
+boundaries.</li>
+</ul>
+<h2 id="permission-boundaries-as-guardrails">Permission Boundaries as
+Guardrails</h2>
+<p>An IAM permission boundary sets the maximum permissions that an
+identity-based policy can grant to an IAM entity. When using tags within
+a permission boundary:</p>
+<ul>
+<li>Delegated administrators creating IAM roles or users must attach the
+permission boundary.</li>
+<li>The permission boundary contains rules requiring
+<code>aws:ResourceTag</code> checks on all <code>dynamodb:*</code>
+actions.</li>
+<li>Even if an identity has an attached policy granting
+<code>dynamodb:*</code> on all resources (<code>"Resource": "*"</code>),
+the permission boundary overrides it, strictly limiting the principal to
+DynamoDB tables whose tags match the boundary's constraints.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-permissions-with-iam-tags';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

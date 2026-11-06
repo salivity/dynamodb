@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Composite Keys for Hierarchical Data - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB relies on composite primary keys—consisting of a partition key (PK) and a sort key (SK)—to efficiently structure, store, and query complex relationships within a NoSQL database. When modeling hierarchical data, such as organizational chart">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-composite-keys-for-hierarchical-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Composite Keys for Hierarchical Data - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-composite-keys-for-hierarchical-data" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB relies on composite primary keys—consisting of a partition key (PK) and a sort key (SK)—to efficiently structure, store, and query complex relationships within a NoSQL database. When modeling hierarchical data, such as organizational chart" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-composite-keys-for-hierarchical-data">DynamoDB
+Composite Keys for Hierarchical Data</h1>
+<p>Amazon DynamoDB relies on composite primary keys—consisting of a
+partition key (PK) and a sort key (SK)—to efficiently structure, store,
+and query complex relationships within a NoSQL database. When modeling
+hierarchical data, such as organizational charts, file directories, or
+multi-tiered product categories, composite keys eliminate the need for
+relational joins by grouping related records together. By combining
+targeted partition routing with range-based sort key operations,
+developers can retrieve multi-level nested data in a single,
+predictable, low-latency query.</p>
+<h3 id="natural-item-collection-grouping">Natural Item Collection
+Grouping</h3>
+<p>In DynamoDB, all items sharing the same partition key value form an
+item collection stored on the same physical partition. In hierarchical
+data modeling, assigning the root or parent entity identifier to the
+partition key ensures that all descendant nodes reside together.</p>
+<p>For example, in an e-commerce catalog, setting the partition key to
+an order identifier allows line items, shipping addresses, and status
+history to be stored alongside the core order record. This physical
+grouping guarantees that fetching an entire hierarchy requires reading
+from only one storage node, maintaining high performance at scale.</p>
+<h3 id="flexible-hierarchy-traversal-with-begins_with">Flexible
+Hierarchy Traversal with <code>begins_with</code></h3>
+<p>The sort key allows for structured, delimited path modeling (such as
+<code>REGION#COUNTRY#STATE#CITY</code>). DynamoDB's
+<code>begins_with</code> operator enables selective querying at any
+depth of the hierarchy without altering the table schema:</p>
+<ul>
+<li><code>SK begins_with("REGION#")</code> fetches all records under the
+region.</li>
+<li><code>SK begins_with("REGION#USA#")</code> narrows the query down to
+national records.</li>
+<li><code>SK begins_with("REGION#USA#CALIFORNIA#")</code> targets only
+state-level entities.</li>
+</ul>
+<p>This prefix-based querying provides an efficient mechanism for
+"drilling down" into hierarchical paths, reducing data transfer costs
+and processing overhead by retrieving only the required branch of the
+tree.</p>
+<h3 id="efficient-single-table-design-without-joins">Efficient
+Single-Table Design Without Joins</h3>
+<p>Relational databases handle hierarchies through recursive Common
+Table Expressions (CTEs) or foreign key joins, both of which introduce
+high computational complexity as datasets expand. Because DynamoDB does
+not support joins, composite keys enable a single-table design pattern
+where parent and child records of differing schemas are returned in a
+single <code>Query</code> API call.</p>
+<p>Querying a specific partition key and defining conditions on the sort
+key retrieves both the parent metadata and its nested sub-components
+simultaneously, drastically reducing network round-trips and application
+latency.</p>
+<h3 id="predictable-scale-and-cost-control">Predictable Scale and Cost
+Control</h3>
+<p>Composite keys prevent hot partitions and high operational costs when
+querying hierarchies:</p>
+<ul>
+<li><strong>Bounded Reads:</strong> DynamoDB evaluates sort key range
+conditions before returning results, meaning consumed read capacity
+units (RCUs) correspond only to the targeted branch of the hierarchy
+rather than the whole table.</li>
+<li><strong>Predictable Performance:</strong> Regardless of whether the
+database contains gigabytes or petabytes of information, locating a
+partition and scanning an ordered sort key range remains a low-latency
+operation, typically executing in single-digit milliseconds.</li>
+</ul>
+<h3 id="range-based-filtering-and-sorting">Range-Based Filtering and
+Sorting</h3>
+<p>Because items within an item collection are physically sorted in
+ascending or descending order by their sort key, composite keys allow
+time-series or state-based hierarchies to be organized sequentially.
+Combining hierarchical prefixes with timestamps (for example,
+<code>COMMENT#2024-05-01T12:00:00Z</code>) allows applications to query
+nested discussions, changelogs, or version trees chronologically while
+restricting results using standard comparison operators like
+<code>&lt;</code>, <code>&gt;</code>, and <code>BETWEEN</code>.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-composite-keys-for-hierarchical-data';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

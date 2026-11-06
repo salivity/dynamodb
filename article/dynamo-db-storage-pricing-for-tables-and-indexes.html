@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Storage Pricing for Tables and Indexes - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB calculates storage pricing based on the cumulative disk space consumed by your base table items and secondary indexes, billed using a monthly per-gigabyte rate. Storage usage is continuously monitored throughout the month and averaged to d">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-storage-pricing-for-tables-and-indexes">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Storage Pricing for Tables and Indexes - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-storage-pricing-for-tables-and-indexes" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB calculates storage pricing based on the cumulative disk space consumed by your base table items and secondary indexes, billed using a monthly per-gigabyte rate. Storage usage is continuously monitored throughout the month and averaged to d" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-storage-pricing-for-tables-and-indexes">DynamoDB
+Storage Pricing for Tables and Indexes</h1>
+<p>Amazon DynamoDB calculates storage pricing based on the cumulative
+disk space consumed by your base table items and secondary indexes,
+billed using a monthly per-gigabyte rate. Storage usage is continuously
+monitored throughout the month and averaged to determine your final
+bill, with the first 25 gigabytes per month included for free under the
+AWS Free Tier. Understanding how DynamoDB measures raw item data,
+attribute overhead, and index replication is critical for accurately
+projecting and optimizing your AWS storage costs.</p>
+<h2 id="how-dynamodb-computes-base-table-data-size">How DynamoDB
+Computes Base Table Data Size</h2>
+<p>Storage calculation begins at the item level. DynamoDB does not
+simply measure the raw payload; it computes the size of each item by
+adding the byte size of attribute names, the byte size of attribute
+values, and a fixed overhead cost.</p>
+<p>For each item stored in a table, DynamoDB calculates the size using
+the following components:</p>
+<ul>
+<li><strong>Attribute Names:</strong> The length of each attribute name
+in UTF-8 bytes.</li>
+<li><strong>Attribute Values:</strong> The size of the data depending on
+its data type:
+<ul>
+<li><em>Strings:</em> The number of bytes using UTF-8 encoding.</li>
+<li><em>Numbers:</em> Variable-length encoding, roughly 1 byte per two
+significant digits plus 1 byte for formatting (up to 21 bytes).</li>
+<li><em>Binary:</em> The exact number of raw bytes.</li>
+<li><em>Boolean:</em> 1 byte.</li>
+<li><em>Null:</em> 1 byte.</li>
+<li><em>Lists and Maps:</em> The total size of all nested attribute
+names and values, plus 3 bytes of structural overhead per element.</li>
+</ul></li>
+<li><strong>Per-Item Overhead:</strong> A fixed 100 bytes of system
+overhead added to every item to manage metadata and indexing internal to
+DynamoDB storage architecture.</li>
+</ul>
+<p>The sum of all items in the table determines the total base table
+storage footprint.</p>
+<h2 id="how-secondary-index-storage-is-computed">How Secondary Index
+Storage Is Computed</h2>
+<p>Secondary indexes replicate data from your base table and occupy
+independent storage space. The method of calculation depends on whether
+you use Global Secondary Indexes (GSIs) or Local Secondary Indexes
+(LSIs).</p>
+<h3 id="global-secondary-indexes-gsis">Global Secondary Indexes
+(GSIs)</h3>
+<p>GSIs maintain their own distinct partition and sort keys, as well as
+copies of projected attributes. For every item written to a base table
+that qualifies for a GSI, the GSI storage size includes:</p>
+<ul>
+<li>The partition key and sort key of the GSI (attribute name and value
+bytes).</li>
+<li>The primary key attributes of the base table (attribute name and
+value bytes).</li>
+<li>Any additional attributes projected into the index
+(<code>KEYS_ONLY</code>, <code>INCLUDE</code>, or
+<code>ALL</code>).</li>
+<li>A fixed 100 bytes of per-index-item overhead.</li>
+</ul>
+<p>If you choose the <code>ALL</code> projection type, the GSI
+duplicates the entire base item plus its own keys, effectively doubling
+the storage consumption for that record.</p>
+<h3 id="local-secondary-indexes-lsis">Local Secondary Indexes
+(LSIs)</h3>
+<p>LSIs share the partition key with the base table but define an
+alternative sort key. For every item in an LSI, storage usage
+includes:</p>
+<ul>
+<li>The base table partition key value (bytes).</li>
+<li>The alternative sort key name and value (bytes).</li>
+<li>All projected attributes for that index.</li>
+<li>A fixed 100 bytes of per-index-item overhead.</li>
+</ul>
+<p>LSI data is grouped with the base table data in the same storage
+partition, meaning the combined size of a base item and all its
+corresponding LSI entries counts against the 10 GB item collection
+limit.</p>
+<h2 id="billing-and-table-classes">Billing and Table Classes</h2>
+<p>DynamoDB calculates hourly storage usage by taking snapshots of your
+total storage (base table plus all GSIs and LSIs) and computes a monthly
+average expressed in GB-Months.</p>
+<p>Pricing depends on the selected DynamoDB table class:</p>
+<ul>
+<li><strong>DynamoDB Standard:</strong> Designed for active workloads
+where throughput makes up the majority of costs. Storage is charged at a
+standard rate per GB-month after the 25 GB free tier.</li>
+<li><strong>DynamoDB Standard-Infrequent Access (DynamoDB
+Standard-IA):</strong> Designed for workloads storing massive volumes of
+data that are rarely accessed. Storage costs are discounted by roughly
+60% compared to Standard, though read and write throughput costs are
+higher.</li>
+</ul>
+<p>To determine your total storage cost, DynamoDB multiplies the average
+total gigabytes stored across base tables and secondary indexes by the
+regional per-gigabyte rate for the chosen table class.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-storage-pricing-for-tables-and-indexes';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

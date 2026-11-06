@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Distributes Data Across Storage Nodes - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB distributes internal data across physical storage nodes through horizontal partitioning driven by consistent hashing and partition keys. This article details the underlying architecture of DynamoDB&#39;s storage engine, explaining how the serv">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-distributes-data-across-storage-nodes">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Distributes Data Across Storage Nodes - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-distributes-data-across-storage-nodes" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB distributes internal data across physical storage nodes through horizontal partitioning driven by consistent hashing and partition keys. This article details the underlying architecture of DynamoDB&#39;s storage engine, explaining how the serv" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-distributes-data-across-storage-nodes">How DynamoDB
+Distributes Data Across Storage Nodes</h1>
+<p>Amazon DynamoDB distributes internal data across physical storage
+nodes through horizontal partitioning driven by consistent hashing and
+partition keys. This article details the underlying architecture of
+DynamoDB's storage engine, explaining how the service maps item keys to
+physical hardware, groups storage nodes into multi-Availability Zone
+replication sets, handles dynamic partition scaling, and routes requests
+with predictable single-digit millisecond latency.</p>
+<h3 id="consistent-hashing-and-the-partition-key">Consistent Hashing and
+the Partition Key</h3>
+<p>At the core of DynamoDB's data distribution is consistent hashing.
+When an item is written, DynamoDB takes the item's partition key value
+and passes it through an internal cryptographic hash function
+(historically a variant of MD5). This generates a 128-bit hash value
+that determines the item's position within a fixed, unordered
+keyspace.</p>
+<p>Because the hash function distributes inputs uniformly across the
+keyspace, items with distinct partition keys are spread evenly across
+the storage infrastructure, preventing physical bottlenecks regardless
+of the semantic relationships between the keys.</p>
+<h3 id="partitions-as-the-fundamental-storage-unit">Partitions as the
+Fundamental Storage Unit</h3>
+<p>DynamoDB divides a table's data into logical units called partitions.
+A single partition holds up to 10 GB of data and can deliver up to 1,000
+Write Capacity Units (WCU) and 3,000 Read Capacity Units (RCU).</p>
+<p>Each logical partition maps to physical hardware
+resources—specifically Solid-State Drives (SSDs) and dedicated compute
+slices—managed by storage nodes in AWS data centers. If a table contains
+100 GB of data, DynamoDB allocates at least 10 partitions distributed
+across the physical fleet to balance storage and compute loads.</p>
+<h3 id="replication-groups-and-high-availability">Replication Groups and
+High Availability</h3>
+<p>Physical storage nodes do not operate in isolation; they are
+organized into partition groups. A partition group typically consists of
+a three-node replica set spread across distinct Availability Zones (AZs)
+within an AWS Region:</p>
+<ul>
+<li><strong>Leader Node:</strong> One replica in the group is elected as
+the leader using a Paxos-based consensus algorithm. The leader
+coordinates write operations, appends writes to its local write-ahead
+log (WAL), and propagates changes to peer replicas.</li>
+<li><strong>Peer Replicas:</strong> The other two physical nodes
+replicate the write-ahead log. A write is acknowledged to the client as
+soon as a quorum (the leader and at least one peer replica) confirms the
+log has been committed to disk.</li>
+<li><strong>Read Distribution:</strong> Strongly consistent reads are
+served directly by the leader node, while eventually consistent reads
+are routed to any of the three physical replicas to balance read loads
+across hardware.</li>
+</ul>
+<p>If a physical storage node fails, the consensus mechanism detects the
+failure, elects a new leader if necessary, and provisions a replacement
+storage node by streaming the write-ahead log from the surviving
+peers.</p>
+<h3 id="the-request-router-and-partition-map">The Request Router and
+Partition Map</h3>
+<p>When a client makes an API call to DynamoDB, the request hits a
+stateless Request Router fleet. The Request Router maintains a cached
+copy of the global partition map, which links hash key ranges to the
+specific physical nodes currently hosting those ranges.</p>
+<ol type="1">
+<li>The Request Router hashes the incoming request’s partition key.</li>
+<li>It evaluates its internal routing table to determine which partition
+group owns that hash range.</li>
+<li>It dispatches the request over low-latency internal network links
+directly to the physical storage node responsible for that
+partition.</li>
+</ol>
+<p>If a router's partition map is outdated (for instance, following a
+partition migration), the target storage node returns an error code,
+prompting the Request Router to invalidate its cache, fetch the updated
+partition location, and transparently retry the operation.</p>
+<h3 id="dynamic-partition-splitting-and-heat-management">Dynamic
+Partition Splitting and Heat Management</h3>
+<p>As data grows or throughput requirements increase, DynamoDB
+dynamically adapts without downtime through partition splitting:</p>
+<ul>
+<li><strong>Size-Based Splitting:</strong> When a partition approaches
+the 10 GB threshold, the storage layer splits it into two new child
+partitions. The key range is halved, and one half of the data is
+migrated to a new physical storage node.</li>
+<li><strong>Throughput-Based Splitting:</strong> If workload traffic on
+a partition consistently exceeds 1,000 WCUs or 3,000 RCUs, DynamoDB
+divides the hash range across multiple partitions to distribute the
+compute load across different physical nodes.</li>
+</ul>
+<p>To mitigate transient traffic spikes on specific keys, DynamoDB
+incorporates adaptive capacity. This mechanism dynamically reallocates
+unused read and write capacity from quiet partitions to busy partitions
+on other physical nodes, preventing throttling caused by non-uniform
+access patterns across the cluster.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-distributes-data-across-storage-nodes';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

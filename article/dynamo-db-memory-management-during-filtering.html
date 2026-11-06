@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Memory Management During Filtering - dynamodb</title>
+    <meta name="description" content="This article examines how Amazon DynamoDB manages memory utilization during complex filtering operations. While complex filter expressions can cause high compute overhead in traditional relational systems, DynamoDB maintains strict predictability through">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-memory-management-during-filtering">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Memory Management During Filtering - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-memory-management-during-filtering" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how Amazon DynamoDB manages memory utilization during complex filtering operations. While complex filter expressions can cause high compute overhead in traditional relational systems, DynamoDB maintains strict predictability through" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-memory-management-during-filtering">DynamoDB Memory
+Management During Filtering</h1>
+<p>This article examines how Amazon DynamoDB manages memory utilization
+during complex filtering operations. While complex filter expressions
+can cause high compute overhead in traditional relational systems,
+DynamoDB maintains strict predictability through architectural
+constraints. By enforcing a hard 1 MB read limit per operation,
+evaluating filter expressions via sequential streaming, charging read
+capacity units prior to filtering, and using stateless cursor-based
+pagination, DynamoDB prevents memory exhaustion on its storage nodes
+regardless of query complexity.</p>
+<h3 id="the-1-mb-execution-boundary">The 1 MB Execution Boundary</h3>
+<p>The primary mechanism DynamoDB uses to govern memory utilization
+during queries and scans is the 1 MB data evaluation limit. When an
+operation is executed with a <code>FilterExpression</code>, DynamoDB
+reads items directly from the underlying B-tree storage partitions up to
+a maximum raw payload size of 1 MB before applying any filter
+criteria.</p>
+<p>Because memory allocation per operation is capped at this strict 1 MB
+ceiling, storage node memory is bounded deterministically. No single
+complex operation can allocate unbounded RAM to build an intermediate
+result set, eliminating the risk of out-of-memory (OOM) failures or
+garbage collection spikes at the node level.</p>
+<h3 id="stream-based-evaluation">Stream-Based Evaluation</h3>
+<p>DynamoDB processes filter expressions sequentially in a stream rather
+than loading entire candidate sets into application memory.</p>
+<ol type="1">
+<li><strong>Sequential Fetch:</strong> Data pages are pulled from
+storage into an ephemeral read buffer.</li>
+<li><strong>Boolean Evaluation:</strong> The filter engine evaluates the
+item against the boolean criteria defined in the expression tree.</li>
+<li><strong>Buffer or Discard:</strong> If the item evaluates to
+<code>true</code>, it is placed into the output buffer. If it evaluates
+to <code>false</code>, the memory pointer is immediately cleared, and
+the item is discarded without persisting in memory.</li>
+<li><strong>Boundary Termination:</strong> As soon as the evaluated data
+volume reaches 1 MB—or the output buffer reaches the item limit
+specified by the client—the processing loop terminates immediately,
+returning the matched items along with a
+<code>LastEvaluatedKey</code>.</li>
+</ol>
+<p>This pipeline ensures that intermediate states remain minimal,
+keeping the working memory set proportional to the size of individual
+items rather than the size of the whole table.</p>
+<h3 id="stateless-cursor-based-pagination">Stateless Cursor-Based
+Pagination</h3>
+<p>Complex filtering in distributed databases often leads to memory
+degradation when the database engine retains cursors or session states
+across multiple round-trips. DynamoDB eliminates this overhead by
+remaining entirely stateless.</p>
+<p>Instead of maintaining an open cursor in server memory to track
+filtered progress:</p>
+<ul>
+<li>DynamoDB encodes the position of the last processed item into the
+<code>LastEvaluatedKey</code> token.</li>
+<li>This key is returned to the client application.</li>
+<li>The server releases all execution contexts, buffers, and memory
+allocations tied to the request immediately after sending the
+response.</li>
+</ul>
+<p>Subsequent requests supply the token back as
+<code>ExclusiveStartKey</code>, allowing the storage node to resume
+scanning from that exact point without needing server-side memory
+persistence.</p>
+<h3 id="pre-filter-resource-throttling">Pre-Filter Resource
+Throttling</h3>
+<p>Memory protection is reinforced through DynamoDB's Read Capacity Unit
+(RCU) metering. DynamoDB calculates RCU consumption based on the
+aggregate size of all items read from disk <em>before</em> the
+<code>FilterExpression</code> is evaluated, rather than the size of the
+filtered results returned to the client.</p>
+<p>By tying read capacity consumption to the pre-filtered data
+footprint, DynamoDB’s admission control algorithms throttle operations
+that attempt to scan large amounts of data to satisfy complex filters.
+If an operation exceeds a partition's provisioned throughput or burst
+capacity, it receives a
+<code>ProvisionedThroughputExceededException</code>. This admission
+control guarantees that high-volume filtering requests are queued or
+rejected at the request router level before they can overwhelm the
+physical memory of internal storage replicas.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-memory-management-during-filtering';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

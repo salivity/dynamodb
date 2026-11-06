@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>When to Use Client-Side Caching with DynamoDB - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides consistent, single-digit millisecond latency at scale, but certain application workloads require even faster response times, lower read costs, or protection against throughput throttling. Implementing client-side caching—storing f">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/when-to-use-client-side-caching-with-dynamo-db">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="When to Use Client-Side Caching with DynamoDB - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/when-to-use-client-side-caching-with-dynamo-db" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides consistent, single-digit millisecond latency at scale, but certain application workloads require even faster response times, lower read costs, or protection against throughput throttling. Implementing client-side caching—storing f" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="when-to-use-client-side-caching-with-dynamodb">When to Use
+Client-Side Caching with DynamoDB</h1>
+<p>Amazon DynamoDB provides consistent, single-digit millisecond latency
+at scale, but certain application workloads require even faster response
+times, lower read costs, or protection against throughput throttling.
+Implementing client-side caching—storing frequently accessed DynamoDB
+items directly in the application's local memory—can deliver microsecond
+latency and drastically reduce database load. This guide explains the
+exact scenarios when an application should implement client-side caching
+alongside DynamoDB, the operational benefits, and the primary trade-offs
+to consider.</p>
+<h3 id="high-read-to-write-ratios">High Read-to-Write Ratios</h3>
+<p>If your application reads data significantly more often than it
+writes it, client-side caching is an ideal fit. Workloads such as
+product catalogs, configuration settings, user permissions, and static
+reference data rarely change. Storing these items in local memory (using
+libraries like Guava, Caffeine, or the AWS SDK's DynamoDB Mapper
+extensions) avoids repetitive network hops to DynamoDB for identical
+data, reserving database calls strictly for cache misses and write
+operations.</p>
+<h3 id="extreme-latency-requirements-sub-millisecond-access">Extreme
+Latency Requirements (Sub-Millisecond Access)</h3>
+<p>While DynamoDB reliably returns data within 1 to 10 milliseconds,
+high-frequency trading platforms, real-time gaming engines, and
+low-latency API gateways often demand sub-millisecond responses. Network
+transit time between your compute layer (such as AWS Lambda, ECS, or
+EC2) and the DynamoDB endpoint represents the majority of that latency.
+In-process memory access operates in nanoseconds or microseconds,
+eliminating network round-trips entirely for cached items.</p>
+<h3 id="mitigating-hot-key-throttling">Mitigating Hot Key
+Throttling</h3>
+<p>DynamoDB distributes data across physical partitions based on
+partition keys, with each partition supporting up to 3,000 Read Capacity
+Units (RCUs) per second. If traffic abruptly spikes on a single
+item—such as a viral social media post, breaking news headline, or flash
+sale product—that "hot key" can exceed partition limits and trigger
+<code>ProvisionedThroughputExceededException</code> errors. A
+client-side cache absorbs the bulk of repeated queries for popular keys
+directly at the application layer, preventing partition exhaustion.</p>
+<h3 id="reducing-aws-infrastructure-costs">Reducing AWS Infrastructure
+Costs</h3>
+<p>DynamoDB pricing is primarily driven by provisioned or on-demand Read
+Capacity Units (RCUs). Repeatedly fetching the same data from DynamoDB
+consumes billable read units on every request. By serving frequent reads
+from local client memory:</p>
+<ul>
+<li><strong>On-Demand Mode:</strong> You directly reduce the total
+number of billed read request units.</li>
+<li><strong>Provisioned Mode:</strong> You can provision significantly
+lower baseline throughput, reducing steady-state infrastructure
+costs.</li>
+</ul>
+<p>For applications serving millions of daily reads, moving a fraction
+of those requests to client memory yields noticeable cost
+reductions.</p>
+<h3 id="absorbing-unpredictable-traffic-bursts">Absorbing Unpredictable
+Traffic Bursts</h3>
+<p>During sudden traffic surges, auto-scaling DynamoDB or relying on
+burst capacity may not react quickly enough to prevent transient read
+failures. Client-side caching acts as an immediate shock absorber.
+Because the cache lives within the compute layer, horizontally scaling
+your application instances automatically scales your total read caching
+capacity proportionally with incoming traffic.</p>
+<h3 id="architectural-trade-offs-to-evaluate">Architectural Trade-Offs
+to Evaluate</h3>
+<p>Before implementing client-side caching, ensure your architecture can
+accommodate the following factors:</p>
+<ul>
+<li><strong>Eventual Consistency and Stale Data:</strong> Local memory
+caches inevitably introduce data staleness. Ensure your business logic
+tolerates reading data that may be seconds or minutes behind the primary
+database.</li>
+<li><strong>Cache Invalidation Complexity:</strong> In multi-instance
+environments, invalidating local caches simultaneously across
+independent servers is difficult. Time-to-Live (TTL) expiration is
+generally required to keep data reasonably fresh without complex
+distributed pub/sub messaging.</li>
+<li><strong>Memory Footprint:</strong> In-memory storage increases the
+RAM requirements of your application hosts or containers. Monitor memory
+pressure to avoid triggering out-of-memory (OOM) errors or aggressive
+garbage collection cycles.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/when-to-use-client-side-caching-with-dynamo-db';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

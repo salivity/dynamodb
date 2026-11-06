@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Handles Multi-Gigabyte Documents - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB cannot natively store multi-gigabyte document attributes due to a strict, hard item size limit of 400 KB. Consequently, DynamoDB handles write requests containing multi-gigabyte attributes by rejecting them outright with a client error. To">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-multi-gigabyte-documents">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Handles Multi-Gigabyte Documents - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-multi-gigabyte-documents" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB cannot natively store multi-gigabyte document attributes due to a strict, hard item size limit of 400 KB. Consequently, DynamoDB handles write requests containing multi-gigabyte attributes by rejecting them outright with a client error. To" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-handles-multi-gigabyte-documents">How DynamoDB
+Handles Multi-Gigabyte Documents</h1>
+<p>Amazon DynamoDB cannot natively store multi-gigabyte document
+attributes due to a strict, hard item size limit of 400 KB.
+Consequently, DynamoDB handles write requests containing multi-gigabyte
+attributes by rejecting them outright with a client error. To store and
+manage multi-gigabyte documents alongside DynamoDB data, architects rely
+on an architectural pattern known as the Claim Check pattern, which
+offloads the large payload to Amazon Simple Storage Service (Amazon S3)
+while maintaining pointers and metadata inside DynamoDB.</p>
+<h3 id="the-400-kb-item-limit">The 400 KB Item Limit</h3>
+<p>DynamoDB enforces an absolute maximum item size of 400 KB, which
+includes the attribute name and value sizes for the entire item
+combined. This limit is fundamental to DynamoDB's design:</p>
+<ul>
+<li><strong>Predictable Latency:</strong> By keeping item sizes small,
+DynamoDB guarantees single-digit millisecond response times for read and
+write operations at any scale.</li>
+<li><strong>Storage and Memory Management:</strong> Small items prevent
+large single-item reads or writes from monopolizing SSD throughput,
+memory caches, and internal partition bandwidth.</li>
+<li><strong>API Enforcement:</strong> If an application attempts to
+write an item that exceeds 400 KB using operations like
+<code>PutItem</code> or <code>UpdateItem</code>, DynamoDB immediately
+aborts the operation and returns a <code>ValidationException</code>
+stating that the item size has exceeded the allowed limit.</li>
+</ul>
+<p>Because of this hard architectural constraint, DynamoDB does not
+provide internal storage allocation mechanisms, such as automatic
+paging, offloading, or disk segment chaining, for individual large
+documents or multi-gigabyte attributes.</p>
+<h3 id="the-solution-the-claim-check-pattern">The Solution: The Claim
+Check Pattern</h3>
+<p>To manage multi-gigabyte documents within a DynamoDB-driven
+architecture, you must decouple the document's payload from its
+structured metadata using the Claim Check pattern.</p>
+<h4 id="1-payload-offloading-to-amazon-s3">1. Payload Offloading to
+Amazon S3</h4>
+<p>Instead of transmitting the multi-gigabyte document directly to
+DynamoDB, the application uploads the file directly to Amazon S3. S3 is
+designed specifically for object storage, natively supporting individual
+files up to 5 TB in size with high durability and cost-effective tiered
+storage classes.</p>
+<h4 id="2-storing-pointers-in-dynamodb">2. Storing Pointers in
+DynamoDB</h4>
+<p>Once the document is stored in S3, the application writes an item to
+DynamoDB containing:</p>
+<ul>
+<li>The primary key (partition key and optional sort key).</li>
+<li>The S3 reference URI (bucket name and object key).</li>
+<li>Searchable metadata, such as file size, MIME type, upload timestamp,
+and ownership details.</li>
+<li>Indexable attributes required for querying, filtering, and access
+control.</li>
+</ul>
+<h4 id="3-retrieving-the-document">3. Retrieving the Document</h4>
+<p>When retrieving data:</p>
+<ol type="1">
+<li>The client queries DynamoDB to fetch the document's metadata and S3
+location.</li>
+<li>The client uses the retrieved S3 key to download the file directly
+from S3, often using pre-signed URLs to maintain secure,
+direct-to-storage downloads without routing large payloads through an
+intermediate API layer.</li>
+</ol>
+<h3 id="why-other-approaches-fail-at-scale">Why Other Approaches Fail at
+Scale</h3>
+<p>Techniques commonly used for moderately sized attributes do not work
+for multi-gigabyte data:</p>
+<ul>
+<li><strong>Compression:</strong> Compressing text, JSON, or binary data
+using algorithms like Gzip or Zstandard can reduce data size, but it
+cannot shrink gigabyte-scale payloads to under 400 KB.</li>
+<li><strong>Item Chunking:</strong> Splitting a document into multiple
+400 KB items spread across multiple rows is impractical for
+gigabyte-scale documents. A 2 GB document would require over 5,000
+separate items, resulting in excessive write capacity unit (WCU)
+consumption, expensive read assembly, high latency, and complex
+transaction management.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-multi-gigabyte-documents';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

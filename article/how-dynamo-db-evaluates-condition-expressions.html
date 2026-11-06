@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Evaluates Condition Expressions - dynamodb</title>
+    <meta name="description" content="This article explains how Amazon DynamoDB evaluates condition expressions before executing item mutations such as PutItem, UpdateItem, and DeleteItem. By enforcing conditions at the database level, DynamoDB ensures that write operations only succeed if an">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-condition-expressions">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Evaluates Condition Expressions - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-condition-expressions" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Amazon DynamoDB evaluates condition expressions before executing item mutations such as PutItem, UpdateItem, and DeleteItem. By enforcing conditions at the database level, DynamoDB ensures that write operations only succeed if an" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-evaluates-condition-expressions">How DynamoDB
+Evaluates Condition Expressions</h1>
+<p>This article explains how Amazon DynamoDB evaluates condition
+expressions before executing item mutations such as
+<code>PutItem</code>, <code>UpdateItem</code>, and
+<code>DeleteItem</code>. By enforcing conditions at the database level,
+DynamoDB ensures that write operations only succeed if an item meets
+specific criteria, preventing data corruption, overwrites, and race
+conditions. Below is a breakdown of the evaluation lifecycle, atomicity
+guarantees, and error-handling behavior during conditional
+mutations.</p>
+<h3 id="the-evaluation-lifecycle">The Evaluation Lifecycle</h3>
+<p>When a client sends a write request with a condition expression,
+DynamoDB processes the operation in a synchronized sequence on the
+storage node hosting the item's partition:</p>
+<ol type="1">
+<li><strong>Locating the Item:</strong> DynamoDB routes the request to
+the appropriate storage node using the item's partition key. It reads
+the current state of the existing item from local storage.</li>
+<li><strong>Parsing the Expression:</strong> The engine parses the
+condition expression, replacing any expression attribute names (aliases
+for reserved words or nested paths) and expression attribute values
+(placeholders for actual values) with their resolved inputs.</li>
+<li><strong>Evaluating Logic:</strong> DynamoDB evaluates the boolean
+expression against the existing item's attributes. Operators such as
+comparison operators (<code>=</code>, <code>&lt;</code>,
+<code>&gt;</code>), functions (<code>attribute_exists</code>,
+<code>attribute_not_exists</code>, <code>begins_with</code>,
+<code>contains</code>), and logical operators (<code>AND</code>,
+<code>OR</code>, <code>NOT</code>) are applied directly to the retrieved
+item data. If the item does not currently exist in the table, all
+attributes are treated as non-existent.</li>
+<li><strong>Execution or Abort:</strong>
+<ul>
+<li><strong>If the condition evaluates to true:</strong> The requested
+mutation is applied immediately.</li>
+<li><strong>If the condition evaluates to false:</strong> The operation
+halts, the item remains unchanged, and DynamoDB returns a
+<code>ConditionalCheckFailedException</code> (HTTP 400).</li>
+</ul></li>
+</ol>
+<h3 id="atomicity-and-concurrency-control">Atomicity and Concurrency
+Control</h3>
+<p>DynamoDB performs the read, condition evaluation, and subsequent
+write as a single atomic operation on the storage node. While the
+condition is being evaluated and the write is applied, the item is
+locked against other concurrent mutations on that partition. This strict
+serializability guarantees optimistic concurrency control: no other
+operation can modify or delete the item between the evaluation step and
+the commit step.</p>
+<h3 id="handling-non-existent-items">Handling Non-Existent Items</h3>
+<p>A condition expression does not require an item to exist beforehand
+unless explicitly defined. For example, using the
+<code>attribute_not_exists(partition_key)</code> function ensures that
+an item is created only if it does not already exist, effectively
+preventing accidental overwrites. Conversely, operations targeting an
+existing item can assert <code>attribute_exists(partition_key)</code> to
+ensure an update or delete fails if the target item is missing.</p>
+<h3 id="capacity-and-cost-impact">Capacity and Cost Impact</h3>
+<p>DynamoDB consumes write capacity units (WCUs) even when a condition
+check fails. Because the system must perform the internal read and
+evaluation work on the partition replica, a failed conditional write
+incurs the same capacity unit cost as if the condition had passed. If
+the request fails due to validation errors (such as a malformed
+expression) before reaching the storage node, no capacity units are
+consumed.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-condition-expressions';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

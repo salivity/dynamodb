@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Key Distribution and IOPS Allocation - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, optimal performance and cost efficiency depend heavily on how data is physically distributed across storage nodes. This article examines how partition key distribution dictates the uniformity of Input/Output Operations Per Second (IOPS">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-distribution-and-iops-allocation">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Key Distribution and IOPS Allocation - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-distribution-and-iops-allocation" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, optimal performance and cost efficiency depend heavily on how data is physically distributed across storage nodes. This article examines how partition key distribution dictates the uniformity of Input/Output Operations Per Second (IOPS" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="dynamodb-partition-key-distribution-and-iops-allocation">DynamoDB
+Partition Key Distribution and IOPS Allocation</h1>
+<p>In Amazon DynamoDB, optimal performance and cost efficiency depend
+heavily on how data is physically distributed across storage nodes. This
+article examines how partition key distribution dictates the uniformity
+of Input/Output Operations Per Second (IOPS) allocation across
+partitions. It explores the relationship between hash-based partitioning
+and throughput distribution, the risks of hot partitions, how DynamoDB
+manages dynamic workloads via adaptive capacity, and best practices for
+designing schema keys that maximize IOPS efficiency.</p>
+<h2 id="the-architecture-of-dynamodb-partitioning">The Architecture of
+DynamoDB Partitioning</h2>
+<p>DynamoDB distributes table data across multiple physical partitions.
+Each partition is an independent storage allocation backed by
+solid-state drives (SSDs) and replicated across multiple Availability
+Zones.</p>
+<p>When an item is written to a table, DynamoDB feeds the partition key
+value into an internal cryptographic hash function. The output hash
+determines the physical partition where the item will reside.</p>
+<p>Because each physical partition has inherent hardware constraints, it
+can support a maximum of:</p>
+<ul>
+<li>3,000 Read Capacity Units (RCUs)</li>
+<li>1,000 Write Capacity Units (WCUs)</li>
+<li>10 GB of data</li>
+</ul>
+<p>When total throughput requirements or storage size exceed these
+limits, DynamoDB splits the data into additional partitions.</p>
+<h2 id="how-partition-key-distribution-affects-iops">How Partition Key
+Distribution Affects IOPS</h2>
+<p>Total provisioned throughput (or on-demand bursts) must theoretically
+be shared across all physical partitions. If partition keys are
+distributed uniformly, read and write requests disperse evenly across
+the underlying hardware, allowing the workload to utilize the full
+allocation of provisioned IOPS.</p>
+<h3 id="uniform-distribution-high-cardinality">Uniform Distribution
+(High Cardinality)</h3>
+<p>When a schema uses partition keys with high cardinality and distinct
+values—such as UUIDs, user IDs, or device serial numbers—traffic is
+scattered across all available partitions.</p>
+<ul>
+<li><strong>Balanced Resource Consumption:</strong> Every partition
+handles a roughly equal share of the request load.</li>
+<li><strong>Predictable Latency:</strong> Read and write latencies
+remain consistent because no single storage node is overwhelmed.</li>
+<li><strong>Full Throughput Utilization:</strong> If a table with 10
+partitions is provisioned for 10,000 RCUs, each partition consistently
+utilizes its 1,000 RCU slice without throttling.</li>
+</ul>
+<h3 id="non-uniform-distribution-hot-partitions">Non-Uniform
+Distribution (Hot Partitions)</h3>
+<p>When a schema uses partition keys with low cardinality or temporal
+patterns—such as status flags, days of the week, or static
+categories—traffic concentrates on a small subset of partitions,
+creating "hot partitions."</p>
+<ul>
+<li><strong>Localized Throttling:</strong> If 80% of application traffic
+targets a single partition key, that traffic hits a single physical
+partition. If requests exceed that specific partition's capacity (up to
+1,000 WCUs or 3,000 RCUs), DynamoDB throttles the requests with a
+<code>ProvisionedThroughputExceededException</code>, even if the overall
+table capacity is mostly idle.</li>
+<li><strong>Wasted Throughput:</strong> The remaining physical
+partitions sit underutilized, leading to inefficient spend on unconsumed
+provisioned IOPS.</li>
+</ul>
+<h2 id="adaptive-capacity-and-its-limits">Adaptive Capacity and Its
+Limits</h2>
+<p>DynamoDB includes a feature known as Adaptive Capacity, designed to
+mitigate imbalances in partition key distribution. Adaptive capacity
+monitors traffic patterns and dynamically shifts unused provisioned
+throughput to heavily accessed partitions.</p>
+<p>However, adaptive capacity is not a substitute for proper key
+design:</p>
+<ol type="1">
+<li><strong>Hard Physical Limits:</strong> Adaptive capacity cannot
+exceed the physical boundary of an individual partition (1,000 WCUs or
+3,000 RCUs). A single partition key cannot exceed these thresholds
+regardless of overall table throughput.</li>
+<li><strong>Reaction Latency:</strong> While adaptive capacity responds
+quickly to sudden shifts in traffic, extreme traffic spikes on a single
+key can still produce intermittent throttling before capacity
+reallocates.</li>
+</ol>
+<h2 id="strategies-for-uniform-iops-allocation">Strategies for Uniform
+IOPS Allocation</h2>
+<p>To ensure uniform IOPS consumption across all physical partitions,
+implement the following key design patterns:</p>
+<ul>
+<li><strong>Key Sharding / Salt Addition:</strong> If a single logical
+key must handle massive write volume (e.g., a real-time event counter),
+append a calculated or randomized suffix to the partition key (such as
+<code>EventID_1</code>, <code>EventID_2</code>, through
+<code>EventID_N</code>). This distributes the writes across <span
+class="math inline">\(N\)</span> distinct partitions.</li>
+<li><strong>Composite Keys:</strong> Pair a coarse partition key with a
+high-cardinality sort key to allow complex queries while maintaining a
+well-distributed primary hash.</li>
+<li><strong>Avoid Monotonic Keys:</strong> Avoid using monotonically
+increasing values, like timestamps, as raw partition keys. This pattern
+forces all current read/write traffic onto a single partition
+representing the current time window, leaving historical partitions
+dormant.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-distribution-and-iops-allocation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Update Expressions: SET, REMOVE, ADD, DELETE - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB uses update expressions within the UpdateItem API operation to modify existing item attributes or add new ones without needing to overwrite the entire item. These expressions rely on four core action clauses: SET, REMOVE, ADD, and DELETE.">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-update-expressions-set-remove-add-delete">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Update Expressions: SET, REMOVE, ADD, DELETE - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-update-expressions-set-remove-add-delete" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB uses update expressions within the UpdateItem API operation to modify existing item attributes or add new ones without needing to overwrite the entire item. These expressions rely on four core action clauses: SET, REMOVE, ADD, and DELETE." />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-update-expressions-set-remove-add-delete">DynamoDB
+Update Expressions: SET, REMOVE, ADD, DELETE</h1>
+<p>Amazon DynamoDB uses update expressions within the
+<code>UpdateItem</code> API operation to modify existing item attributes
+or add new ones without needing to overwrite the entire item. These
+expressions rely on four core action clauses: <code>SET</code>,
+<code>REMOVE</code>, <code>ADD</code>, and <code>DELETE</code>. Each
+action targets specific data types and operational requirements, such as
+altering values, manipulating nested documents, adjusting numeric
+counters, or modifying sets. Understanding how DynamoDB processes these
+actions ensures precise, atomic, and cost-effective data
+modifications.</p>
+<h3 id="the-set-action">The SET Action</h3>
+<p>The <code>SET</code> action is the most versatile clause in DynamoDB
+update expressions. It creates an attribute if it does not already
+exist, or updates its value if it does.</p>
+<ul>
+<li><strong>Assigning Values:</strong> You can assign primitive values,
+maps, lists, or sets directly (e.g.,
+<code>SET #status = :val</code>).</li>
+<li><strong>Nested Document Paths:</strong> <code>SET</code> can update
+specific elements within maps and lists using document paths (e.g.,
+<code>SET address.zipcode = :zip</code> or
+<code>SET favoriteColors[0] = :color</code>).</li>
+<li><strong>Arithmetic Operations:</strong> It supports basic addition
+and subtraction on numeric types directly within the expression (e.g.,
+<code>SET viewCount = viewCount + :incr</code>).</li>
+<li><strong>Built-in Functions:</strong> <code>SET</code> supports
+functions like <code>if_not_exists(path, value)</code> to set a fallback
+value if the attribute does not exist, and
+<code>list_append(list1, list2)</code> to concatenate lists.</li>
+</ul>
+<h3 id="the-remove-action">The REMOVE Action</h3>
+<p>The <code>REMOVE</code> action deletes one or more attributes from an
+existing item or removes specific elements from a list.</p>
+<ul>
+<li><strong>Top-Level and Nested Attributes:</strong> Specifying an
+attribute path removes that attribute completely (e.g.,
+<code>REMOVE temporaryToken, metadata.debugInfo</code>).</li>
+<li><strong>List Elements:</strong> Specifying an index removes an
+element from a list (e.g., <code>REMOVE shoppingList[1]</code>). When an
+element is removed, DynamoDB shifts all subsequent list elements down by
+one index to close the gap.</li>
+</ul>
+<h3 id="the-add-action">The ADD Action</h3>
+<p>The <code>ADD</code> action is restricted to only two data types:
+numbers and sets (String Sets, Number Sets, Binary Sets). It cannot be
+used with lists, maps, booleans, or plain strings.</p>
+<ul>
+<li><strong>Numbers (Atomic Counters):</strong> When applied to a
+numeric attribute, <code>ADD</code> acts as an atomic counter. If the
+attribute does not exist, DynamoDB creates it with the given value as
+its starting point. If it does exist, DynamoDB adds the positive or
+negative value to the current total (e.g.,
+<code>ADD loginAttempts :one</code>). <em>Note: AWS recommends using
+<code>SET</code> with arithmetic expressions over <code>ADD</code> for
+numeric modifications in newer applications.</em></li>
+<li><strong>Sets:</strong> When applied to a set, <code>ADD</code>
+appends the specified elements to the existing set if they are not
+already present (e.g., <code>ADD tags :newTags</code>). If the set
+attribute does not exist, DynamoDB creates a new set with those
+elements.</li>
+</ul>
+<h3 id="the-delete-action">The DELETE Action</h3>
+<p>The <code>DELETE</code> action works exclusively on set data types
+(String Sets, Number Sets, and Binary Sets).</p>
+<ul>
+<li><strong>Removing Elements from Sets:</strong> Unlike
+<code>REMOVE</code>, which deletes an entire attribute,
+<code>DELETE</code> removes one or more individual elements from an
+existing set (e.g.,
+<code>DELETE blacklistedUsers :removedUsers</code>).</li>
+<li><strong>Non-Existent Elements:</strong> If the values specified to
+be deleted do not exist within the target set, DynamoDB completes the
+operation without throwing an error. If all elements of a set are
+deleted, the attribute itself is removed because DynamoDB does not
+support empty sets.</li>
+</ul>
+<h3 id="rules-for-combining-actions">Rules for Combining Actions</h3>
+<p>DynamoDB allows multiple actions to be combined into a single update
+expression (e.g., <code>SET #a = :val1 REMOVE #b ADD #c :val2</code>).
+However, several key constraints apply:</p>
+<ul>
+<li>Each action keyword (<code>SET</code>, <code>REMOVE</code>,
+<code>ADD</code>, <code>DELETE</code>) can appear only once in the
+entire update expression string.</li>
+<li>You cannot reference the exact same attribute across multiple action
+clauses within the same expression (for instance, you cannot
+<code>SET #a</code> and <code>REMOVE #a</code> in the same update).</li>
+<li>All operations inside a single update expression are executed
+atomically as part of a single transaction on the item.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-update-expressions-set-remove-add-delete';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

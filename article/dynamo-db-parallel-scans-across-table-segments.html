@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Parallel Scans Across Table Segments - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB processes large datasets efficiently by allowing applications to divide a table into multiple logical segments and scan them concurrently. When executing a parallel scan across non-contiguous table segments, DynamoDB decouples the applicat">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-parallel-scans-across-table-segments">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Parallel Scans Across Table Segments - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-parallel-scans-across-table-segments" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB processes large datasets efficiently by allowing applications to divide a table into multiple logical segments and scan them concurrently. When executing a parallel scan across non-contiguous table segments, DynamoDB decouples the applicat" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-parallel-scans-across-table-segments">DynamoDB Parallel
+Scans Across Table Segments</h1>
+<p>Amazon DynamoDB processes large datasets efficiently by allowing
+applications to divide a table into multiple logical segments and scan
+them concurrently. When executing a parallel scan across non-contiguous
+table segments, DynamoDB decouples the application's logical segment
+definition from the physical storage partitions beneath it. This article
+explains how DynamoDB distributes these logical segments across its
+internal partition key hash space, how individual workers track progress
+through non-contiguous boundaries, and the mechanics required to
+maximize throughput without resource contention.</p>
+<h2 id="logical-segmentation-vs-physical-partitions">Logical
+Segmentation vs. Physical Partitions</h2>
+<p>In DynamoDB, data is physically distributed across storage nodes
+using an internal hash function applied to each item's partition key.
+This hash space ranges from <code>0x0000000000000000</code> to
+<code>0xFFFFFFFFFFFFFFFF</code>. Physical partitions hold contiguous
+ranges of this hash space.</p>
+<p>When an application initiates a parallel scan, it specifies two key
+parameters:</p>
+<ul>
+<li><code>TotalSegments</code>: The number of logical chunks the table
+should be divided into.</li>
+<li><code>Segment</code>: The specific chunk (0-indexed) that a given
+worker thread will process.</li>
+</ul>
+<p>A logical segment does not map directly to a single physical
+partition. Instead, DynamoDB mathematically stripes the logical segments
+across the entire hash space. Because physical partitions may split,
+merge, or reside on separate storage nodes, the data belonging to a
+single logical segment is often physically non-contiguous. DynamoDB
+routes each scan operation to the relevant storage nodes that host the
+parts of the hash ring assigned to that specific logical segment.</p>
+<h2 id="processing-mechanism-for-non-contiguous-segments">Processing
+Mechanism for Non-Contiguous Segments</h2>
+<p>When a worker requests a scan for a specific segment, DynamoDB
+executes the following steps:</p>
+<ol type="1">
+<li><strong>Hash Space Assignment:</strong> DynamoDB uses an internal
+hashing algorithm to interleave the assigned keyspace for each segment.
+Segment <span class="math inline">\(N\)</span> out of <span
+class="math inline">\(M\)</span> is responsible for evaluating keys
+whose hash values align with <span class="math inline">\((Hash(Key)
+\pmod M) = N\)</span>. This guarantees that every item belongs to
+exactly one segment, preventing duplicate processing across
+workers.</li>
+<li><strong>Scatter-Gather on the Storage Layer:</strong> Because the
+items matching the segment formula reside across multiple physical
+partitions, the DynamoDB request router communicates with multiple
+storage nodes. The router coordinates reads across these disparate
+partitions without requiring the underlying partitions to be
+adjacent.</li>
+<li><strong>Pagination with <code>LastEvaluatedKey</code>:</strong>
+Scans return up to 1 MB of data per request. To resume processing across
+non-contiguous blocks, DynamoDB returns a <code>LastEvaluatedKey</code>.
+This key acts as an opaque cursor containing both the primary key and
+internal partition boundary tracking. The worker must supply this key in
+the subsequent request's <code>ExclusiveStartKey</code> parameter.</li>
+<li><strong>Independent Progress Tracking:</strong> Each worker
+maintains its own cursor independently. A worker scanning Segment 0 can
+progress at a completely different rate than a worker scanning Segment
+1. Non-contiguous data distribution does not block or synchronize
+individual segment progress.</li>
+</ol>
+<h2 id="throughput-and-provisioned-capacity-allocation">Throughput and
+Provisioned Capacity Allocation</h2>
+<p>DynamoDB distributes read capacity units (RCUs) evenly across all
+physical partitions in a table. When parallel scans run:</p>
+<ul>
+<li><strong>Even Load Distribution:</strong> If
+<code>TotalSegments</code> is equal to or a multiple of the number of
+physical partitions, the scan requests are evenly distributed across all
+underlying storage nodes, maximizing RCU utilization.</li>
+<li><strong>Mitigating Hotspots:</strong> If a segment encompasses a
+heavily populated non-contiguous partition or high-traffic partition
+keys, that specific worker might exhaust partition-level throughput,
+resulting in <code>ProvisionedThroughputExceededException</code>.</li>
+<li><strong>Worker Sizing:</strong> Setting <code>TotalSegments</code>
+too high relative to the physical partition count introduces overhead,
+while setting it too low leaves physical partition capacity
+underutilized.</li>
+</ul>
+<h2 id="best-practices-for-parallel-scans">Best Practices for Parallel
+Scans</h2>
+<p>To achieve optimal performance when scanning non-contiguous
+segments:</p>
+<ul>
+<li><strong>Match Segments to Partition Count:</strong> Set
+<code>TotalSegments</code> equal to or slightly higher than the number
+of physical partitions the table utilizes.</li>
+<li><strong>Handle Rate Limiting:</strong> Implement exponential backoff
+in each worker to handle throttling at the individual partition level
+independently.</li>
+<li><strong>Avoid Monopolizing Throughput:</strong> Use
+application-level rate limiters to prevent the parallel scan workers
+from consuming the entirety of the table's provisioned read throughput,
+which could starve other real-time operational workloads.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-parallel-scans-across-table-segments';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

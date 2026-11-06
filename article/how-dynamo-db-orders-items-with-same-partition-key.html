@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Orders Items with Same Partition Key - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB maintains order among items sharing the same partition key by utilizing a secondary attribute known as the Sort Key, historically referred to as a Range Key. When a table uses a composite primary key—composed of a partition key and a sort">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-orders-items-with-same-partition-key">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Orders Items with Same Partition Key - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-orders-items-with-same-partition-key" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB maintains order among items sharing the same partition key by utilizing a secondary attribute known as the Sort Key, historically referred to as a Range Key. When a table uses a composite primary key—composed of a partition key and a sort" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-orders-items-with-same-partition-key">How DynamoDB
+Orders Items with Same Partition Key</h1>
+<p>Amazon DynamoDB maintains order among items sharing the same
+partition key by utilizing a secondary attribute known as the Sort Key,
+historically referred to as a Range Key. When a table uses a composite
+primary key—composed of a partition key and a sort key—all items with
+identical partition key values are co-located on the same physical
+storage node and stored in sorted order according to the sort key. This
+article explains the underlying mechanisms DynamoDB uses to organize,
+store, and retrieve ordered data within a shared partition.</p>
+<h2 id="storage-and-colocation">Storage and Colocation</h2>
+<p>DynamoDB uses the partition key value as an input to an internal hash
+function. The output of this hash function determines the specific
+storage partition (or node) where the item will reside.</p>
+<p>When multiple items share the same partition key value, they are
+assigned to the exact same partition. On that physical partition, the
+storage engine organizes the items in an internal data
+structure—typically an indexed B-tree or Log-Structured Merge-tree
+(LSM-tree)—ordered entirely by the sort key attribute. Because items
+sharing a partition key are physically clustered and presorted on disk,
+DynamoDB does not need to perform an in-memory sort operation when
+reading them.</p>
+<h2 id="data-type-sorting-rules">Data Type Sorting Rules</h2>
+<p>DynamoDB orders items based on the data type defined for the sort
+key:</p>
+<ul>
+<li><strong>String (S):</strong> Strings are ordered based on the UTF-8
+binary encoding bytes of each character. This results in standard
+lexicographical (dictionary-like) ordering based on character code
+points.</li>
+<li><strong>Number (N):</strong> Numbers are stored and sorted by their
+exact mathematical value, regardless of precision or scale. Negative
+numbers precede zero, and zero precedes positive numbers.</li>
+<li><strong>Binary (B):</strong> Binary attributes are compared and
+ordered byte-by-byte in unsigned ascending order.</li>
+</ul>
+<h2 id="retrieving-ordered-items-with-the-query-api">Retrieving Ordered
+Items with the Query API</h2>
+<p>DynamoDB exposes this intrinsic ordering through the
+<code>Query</code> API. A <code>Query</code> operation requires a
+partition key and searches only the collection of items that share that
+key.</p>
+<ul>
+<li><strong>Default Sort Direction:</strong> By default, a query returns
+results in ascending order according to the sort key.</li>
+<li><strong>Reversing Order:</strong> Setting the
+<code>ScanIndexForward</code> parameter to <code>false</code> instructs
+DynamoDB to traverse the storage structure in reverse, returning items
+in descending order without incurring a performance penalty.</li>
+<li><strong>Key Conditions:</strong> Applications can narrow the ordered
+results by using key condition expressions (such as <code>=</code>,
+<code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>,
+<code>&gt;=</code>, <code>BETWEEN</code>, or <code>begins_with</code>)
+on the sort key. Because the data is already physically ordered,
+DynamoDB can quickly seek to the starting point of the range and read
+forward or backward sequentially.</li>
+</ul>
+<h2 id="local-and-global-secondary-indexes">Local and Global Secondary
+Indexes</h2>
+<p>The same ordering principle applies to secondary indexes:</p>
+<ul>
+<li><strong>Local Secondary Indexes (LSIs):</strong> An LSI uses the
+same partition key as the base table but defines a different sort key.
+It maintains a separate, automatically synchronized sorted view of the
+items within the same partition.</li>
+<li><strong>Global Secondary Indexes (GSIs):</strong> A GSI allows both
+a different partition key and a different sort key, redistributing items
+across partitions and ordering them according to the new sort key
+defined for that index.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-orders-items-with-same-partition-key';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculating DynamoDB Transactional Read Capacity - dynamodb</title>
+    <meta name="description" content="Understanding how Amazon DynamoDB calculates Read Capacity Units (RCUs) for transactional reads is essential for designing high-performance applications while managing cloud infrastructure costs. This article explains the exact formula DynamoDB uses to me">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/calculating-dynamo-db-transactional-read-capacity">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Calculating DynamoDB Transactional Read Capacity - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/calculating-dynamo-db-transactional-read-capacity" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Understanding how Amazon DynamoDB calculates Read Capacity Units (RCUs) for transactional reads is essential for designing high-performance applications while managing cloud infrastructure costs. This article explains the exact formula DynamoDB uses to me" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="calculating-dynamodb-transactional-read-capacity">Calculating
+DynamoDB Transactional Read Capacity</h1>
+<p>Understanding how Amazon DynamoDB calculates Read Capacity Units
+(RCUs) for transactional reads is essential for designing
+high-performance applications while managing cloud infrastructure costs.
+This article explains the exact formula DynamoDB uses to measure
+throughput consumption during <code>TransactGetItems</code> operations,
+how item sizes are rounded, and how multiple read operations within a
+single transaction aggregate into total consumed capacity.</p>
+<h3 id="the-basic-unit-of-measurement">The Basic Unit of
+Measurement</h3>
+<p>In standard DynamoDB operations, one Read Capacity Unit (RCU)
+represents one strongly consistent read per second for an item up to 4
+KB in size, or two eventually consistent reads per second for an item up
+to 4 KB.</p>
+<p>Transactional read requests, executed using the
+<code>TransactGetItems</code> API, provide ACID isolation and atomicity
+across one or more items. Because of the coordination and locking
+overhead required to guarantee serializability, DynamoDB doubles the
+baseline cost: <strong>one transactional read requires 2 RCUs for each 4
+KB chunk of data read</strong>.</p>
+<h3 id="the-calculation-rule">The Calculation Rule</h3>
+<p>To determine the RCUs consumed by a transactional read request,
+DynamoDB applies the following process:</p>
+<ol type="1">
+<li><strong>Calculate Individual Item Sizes:</strong> DynamoDB evaluates
+each item requested in the transaction independently. The size of an
+item includes both the attribute names and their corresponding
+values.</li>
+<li><strong>Round Up to the Nearest 4 KB:</strong> The size of each item
+is rounded up to the next 4 KB boundary. If an item is smaller than 4
+KB, it is rounded up to 4 KB.</li>
+<li><strong>Apply the 2x Multiplier:</strong> DynamoDB assigns 2 RCUs
+for every 4 KB increment.</li>
+<li><strong>Aggregate the Total:</strong> The consumed capacity units
+for all individual items within the transaction are summed together to
+determine the total RCUs consumed by the call.</li>
+</ol>
+<p>The formula per item is: <span class="math display">\[\text{Consumed
+RCUs} = \left\lceil \frac{\text{Item Size in KB}}{4\text{ KB}}
+\right\rceil \times 2\]</span></p>
+<h3 id="examples">Examples</h3>
+<ul>
+<li><strong>Single small item (under 4 KB):</strong> Reading an item
+that is 2.5 KB rounds up to 4 KB. At 2 RCUs per 4 KB, the transaction
+consumes <strong>2 RCUs</strong>.</li>
+<li><strong>Single larger item (over 4 KB):</strong> Reading an item
+that is 6 KB rounds up to 8 KB (two 4 KB increments). Consuming 2 RCUs
+per 4 KB chunk results in <strong>4 RCUs</strong>.</li>
+<li><strong>Multiple items in a single transaction:</strong> If a
+<code>TransactGetItems</code> request retrieves:
+<ul>
+<li>Item A: 1.5 KB (rounds up to 4 KB <span
+class="math inline">\(\rightarrow\)</span> 2 RCUs)</li>
+<li>Item B: 7.2 KB (rounds up to 8 KB <span
+class="math inline">\(\rightarrow\)</span> 4 RCUs)</li>
+<li>Item C: 11.8 KB (rounds up to 12 KB <span
+class="math inline">\(\rightarrow\)</span> 6 RCUs)</li>
+</ul>
+The total consumed throughput for the transaction is <span
+class="math inline">\(2 + 4 + 6 = \mathbf{12\text{ RCUs}}\)</span>.</li>
+</ul>
+<h3 id="additional-constraints">Additional Constraints</h3>
+<ul>
+<li><strong>No Cross-Item Bundling:</strong> DynamoDB does not combine
+the sizes of multiple items before rounding. Two separate 1 KB items in
+the same transaction consume 4 RCUs total (2 RCUs each), not 2
+RCUs.</li>
+<li><strong>Transaction Limits:</strong> A single
+<code>TransactGetItems</code> operation can include up to 100 items or
+up to 4 MB of total data, whichever limit is reached first.</li>
+<li><strong>Missing Items:</strong> If an item specified in a
+<code>TransactGetItems</code> call does not exist, DynamoDB still
+consumes 2 RCUs for evaluating that item's key.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/calculating-dynamo-db-transactional-read-capacity';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

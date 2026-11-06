@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Backfills GSIs Without Locking Writes - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB creates and populates Global Secondary Indexes (GSIs) online without interrupting or locking writes on the base table. This article explores the internal multi-phase mechanism DynamoDB uses to achieve this—specifically how it provisions re">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-backfills-gs-is-without-locking-writes">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Backfills GSIs Without Locking Writes - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-backfills-gs-is-without-locking-writes" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB creates and populates Global Secondary Indexes (GSIs) online without interrupting or locking writes on the base table. This article explores the internal multi-phase mechanism DynamoDB uses to achieve this—specifically how it provisions re" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-backfills-gsis-without-locking-writes">How DynamoDB
+Backfills GSIs Without Locking Writes</h1>
+<p>Amazon DynamoDB creates and populates Global Secondary Indexes (GSIs)
+online without interrupting or locking writes on the base table. This
+article explores the internal multi-phase mechanism DynamoDB uses to
+achieve this—specifically how it provisions resources, reads historical
+data through low-priority background scans, continuously applies
+concurrent mutations using internal replication streams, and resolves
+data conflicts to transition the index to an active state safely.</p>
+<h3 id="the-challenge-of-online-indexing">The Challenge of Online
+Indexing</h3>
+<p>In traditional relational databases, creating a secondary index on a
+large table often involves locking the table or placing it into a
+read-only state to maintain data consistency during the build process.
+Because DynamoDB is designed for high-availability, mission-critical
+workloads, it relies on a decoupled, asynchronous background process
+that allows standard base table read and write operations to continue at
+normal throughput and latency while the new GSI is constructed.</p>
+<h3 id="phase-1-resource-provisioning-and-allocation">Phase 1: Resource
+Provisioning and Allocation</h3>
+<p>When an application issues an <code>UpdateTable</code> request to add
+a GSI, DynamoDB sets the index status to <code>CREATING</code>. In the
+background, the storage management layer provisions the necessary
+partition infrastructure for the GSI across multiple Availability Zones.
+This setup includes allocating dedicated storage, compute nodes, and
+partition routing metadata based on the provisioned or on-demand
+throughput settings configured for the index.</p>
+<h3 id="phase-2-historical-data-scanning">Phase 2: Historical Data
+Scanning</h3>
+<p>Once the GSI storage partitions are provisioned, DynamoDB begins
+backfilling existing data. Background processes initiate a parallel scan
+across the base table's physical storage partitions. To prevent this
+historical scan from impacting customer workloads:</p>
+<ul>
+<li><strong>Resource Isolation:</strong> The scan relies on internal
+system capacity and operates at a lower priority than real-time
+application requests.</li>
+<li><strong>Non-Blocking Storage Access:</strong> DynamoDB's underlying
+storage architecture reads storage replicas without taking row- or
+partition-level write locks. Base table write operations continue to
+commit to storage nodes simultaneously.</li>
+</ul>
+<h3 id="phase-3-capturing-real-time-concurrent-mutations">Phase 3:
+Capturing Real-Time Concurrent Mutations</h3>
+<p>While the historical scan runs, client applications continue writing,
+updating, and deleting items in the base table. DynamoDB captures these
+in-flight mutations in real time using an internal storage-level
+replication stream (analogous to the engine powering DynamoDB
+Streams).</p>
+<p>When a base table write succeeds, the mutation is routed not only to
+the base table's storage nodes but also to an asynchronous ingest buffer
+for the newly requested GSI. This decouples user write latency from GSI
+processing latency.</p>
+<h3 id="phase-4-stream-merging-and-conflict-resolution">Phase 4: Stream
+Merging and Conflict Resolution</h3>
+<p>Because the historical scan and real-time mutation streams run
+concurrently, race conditions can occur. For instance, an item could be
+updated by a client and written to the GSI via the stream
+<em>before</em> the historical scan reaches that item's previous
+version.</p>
+<p>DynamoDB resolves this using internal write ordering and
+timestamps:</p>
+<ol type="1">
+<li><strong>Ordering Guarantees:</strong> Mutations processed through
+the replication log carry monotonic sequence numbers and commit
+timestamps.</li>
+<li><strong>Idempotent Writes:</strong> When writing scanned historical
+items to the GSI, the ingestion layer evaluates whether a newer mutation
+has already been applied. If an incoming scan record is older than the
+current state written by the stream, the stale scanned write is
+discarded.</li>
+</ol>
+<h3 id="phase-5-stream-catch-up-and-activation">Phase 5: Stream Catch-Up
+and Activation</h3>
+<p>As the base table scan concludes, the backfilling process transitions
+into a catch-up phase. The system applies any remaining buffered
+real-time mutations until the replication lag between the base table
+writes and the GSI reaches near-zero latency.</p>
+<p>Once the GSI is fully synchronized with the base table:</p>
+<ul>
+<li>The index state flips from <code>CREATING</code> to
+<code>ACTIVE</code>.</li>
+<li>The DynamoDB request routers begin directing incoming query and scan
+requests to the new index.</li>
+<li>Subsequent base table writes are automatically propagated to the
+active GSI via standard asynchronous replication.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-backfills-gs-is-without-locking-writes';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

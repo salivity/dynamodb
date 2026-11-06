@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Count and Throughput Limits - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, table throughput and storage are distributed across physical partitions, making partition count a critical factor in performance management. DynamoDB allocates provisioned Read Capacity Units (RCUs) and Write Capacity Units (WCUs) unif">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-count-and-throughput-limits">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Count and Throughput Limits - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-count-and-throughput-limits" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, table throughput and storage are distributed across physical partitions, making partition count a critical factor in performance management. DynamoDB allocates provisioned Read Capacity Units (RCUs) and Write Capacity Units (WCUs) unif" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-count-and-throughput-limits">DynamoDB
+Partition Count and Throughput Limits</h1>
+<p>In Amazon DynamoDB, table throughput and storage are distributed
+across physical partitions, making partition count a critical factor in
+performance management. DynamoDB allocates provisioned Read Capacity
+Units (RCUs) and Write Capacity Units (WCUs) uniformly across all active
+partitions. Consequently, as the number of partitions increases due to
+growing data volume or high throughput demands, the throughput allocated
+to each individual partition decreases proportionally, which directly
+affects how workloads handle access spikes and key distribution.</p>
+<h3 id="how-dynamodb-determines-partition-count">How DynamoDB Determines
+Partition Count</h3>
+<p>DynamoDB calculates the number of physical partitions allocated to a
+table based on two constraints: storage volume and total provisioned
+throughput. A single physical partition has hard performance and storage
+limits:</p>
+<ul>
+<li>Maximum storage: 10 GB</li>
+<li>Maximum read throughput: 3,000 RCUs</li>
+<li>Maximum write throughput: 1,000 WCUs</li>
+</ul>
+<p>DynamoDB uses the following formula to allocate partitions:</p>
+<ul>
+<li><strong>Partitions based on capacity</strong> = (Total Provisioned
+RCUs / 3,000) + (Total Provisioned WCUs / 1,000)</li>
+<li><strong>Partitions based on size</strong> = Total Table Size in GB /
+10 GB</li>
+<li><strong>Total Partitions</strong> = Max(Capacity Partitions, Size
+Partitions), rounded up to the nearest integer.</li>
+</ul>
+<p>Once partitions are allocated, they never decrease, even if
+provisioned throughput or stored data decreases.</p>
+<h3 id="the-division-of-provisioned-throughput">The Division of
+Provisioned Throughput</h3>
+<p>DynamoDB divides total provisioned throughput equally among all
+physical partitions. The available throughput per partition is governed
+by:</p>
+<p><span class="math display">\[\text{Throughput per Partition} =
+\frac{\text{Total Provisioned Throughput}}{\text{Partition
+Count}}\]</span></p>
+<p>For example, if a table is provisioned with 1,000 WCUs and fits on a
+single partition, that partition can utilize the full 1,000 WCUs. If the
+table grows to 45 GB, DynamoDB automatically provisions 5 partitions to
+satisfy the storage requirement. The 1,000 WCUs are then divided equally
+among the 5 partitions, granting each partition a base allocation of 200
+WCUs.</p>
+<h3 id="impact-on-hot-partitions-and-throttling">Impact on Hot
+Partitions and Throttling</h3>
+<p>Because capacity is distributed evenly, a higher partition count
+significantly lowers the baseline capacity allocated to any single
+partition. If application access patterns concentrate heavily on a small
+set of partition keys—a scenario known as a "hot partition"—the table
+can experience throttling errors
+(<code>ProvisionedThroughputExceededException</code>), even if the
+overall table capacity is substantially underutilized.</p>
+<p>Using the previous example, an individual key on a 5-partition table
+cannot consume more than 200 WCUs consistently without triggering
+throttling, despite the table having an overall limit of 1,000 WCUs.</p>
+<h3 id="adaptive-capacity-mitigations-and-limitations">Adaptive Capacity
+Mitigations and Limitations</h3>
+<p>DynamoDB includes a feature called Adaptive Capacity to mitigate
+uneven traffic distribution. Adaptive Capacity automatically shifts
+unused capacity from quiet partitions to actively loaded partitions and
+uses burst capacity for short-term spikes.</p>
+<p>However, Adaptive Capacity cannot bypass the hard physical limits of
+a single partition. Regardless of how high total table throughput is
+provisioned or how much spare capacity exists across the table, an
+individual physical partition can never exceed 3,000 RCUs or 1,000 WCUs
+for sustained workloads. As a result, maintaining a uniform partition
+key distribution with high cardinality is necessary to prevent partition
+counts from constraining overall application throughput.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-count-and-throughput-limits';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

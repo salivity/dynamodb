@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Use Uniform Partition Keys in DynamoDB? - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB relies on partition keys to distribute data and request traffic evenly across physical storage partitions. This article explains why keeping partition key values uniformly distributed is essential for maximizing performance, avoiding throu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/why-use-uniform-partition-keys-in-dynamo-db">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Use Uniform Partition Keys in DynamoDB? - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/why-use-uniform-partition-keys-in-dynamo-db" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB relies on partition keys to distribute data and request traffic evenly across physical storage partitions. This article explains why keeping partition key values uniformly distributed is essential for maximizing performance, avoiding throu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-use-uniform-partition-keys-in-dynamodb">Why Use Uniform
+Partition Keys in DynamoDB?</h1>
+<p>Amazon DynamoDB relies on partition keys to distribute data and
+request traffic evenly across physical storage partitions. This article
+explains why keeping partition key values uniformly distributed is
+essential for maximizing performance, avoiding throughput throttling,
+and fully utilizing allocated Read Capacity Units (RCUs) and Write
+Capacity Units (WCUs).</p>
+<h3 id="how-dynamodb-partitions-data">How DynamoDB Partitions Data</h3>
+<p>DynamoDB distributes table items across multiple physical storage
+partitions behind the scenes. When an item is written or read, the
+service passes the partition key value through an internal cryptographic
+hash function. The output of this hash determines the exact physical
+partition where the item resides.</p>
+<p>Each physical partition has hard performance limits:</p>
+<ul>
+<li>Up to 1,000 Write Capacity Units (WCUs)</li>
+<li>Up to 3,000 Read Capacity Units (RCUs)</li>
+<li>Up to 10 GB of storage</li>
+</ul>
+<h3 id="the-problem-of-hot-partitions">The Problem of "Hot
+Partitions"</h3>
+<p>When partition keys are not uniformly distributed, a disproportionate
+amount of read or write traffic targets a small subset of keys. This
+scenario creates what is known as a "hot partition."</p>
+<p>If an application sends more requests to a single physical partition
+than its maximum limit permits, DynamoDB throttles the requests,
+resulting in <code>ProvisionedThroughputExceededException</code> errors.
+Even if a table has provisioned thousands of overall WCUs or RCUs, a
+single hot partition can cause application failure because the
+throughput is constrained at the individual partition level.</p>
+<h3 id="efficient-resource-utilization">Efficient Resource
+Utilization</h3>
+<p>DynamoDB allocates your total provisioned throughput across all
+partitions hosting your data. If your access patterns are
+non-uniform:</p>
+<ul>
+<li><strong>Unused Capacity:</strong> Partitions holding infrequently
+accessed data sit idle, wasting their allocated throughput.</li>
+<li><strong>Artificial Bottlenecks:</strong> Active partitions run out
+of capacity, despite the table as a whole having sufficient aggregate
+capacity.</li>
+</ul>
+<p>Uniformly distributed keys ensure that workloads are spread equally
+across the entire physical fleet, allowing you to consume 100% of the
+capacity you pay for without unexpected bottlenecks.</p>
+<h3 id="limitations-of-adaptive-capacity">Limitations of Adaptive
+Capacity</h3>
+<p>DynamoDB includes a feature called Adaptive Capacity, which
+automatically boosts throughput for imbalanced workloads by reallocating
+unused capacity from cold partitions to hot partitions. However,
+Adaptive Capacity has critical limitations:</p>
+<ol type="1">
+<li><strong>Hard Upper Limits:</strong> It cannot exceed the physical
+partition maximums (1,000 WCUs or 3,000 RCUs).</li>
+<li><strong>Reaction Latency:</strong> While instantaneous for short
+bursts, sustained hot traffic can take time to rebalance, during which
+your application may experience throttling.</li>
+</ol>
+<p>Adaptive capacity is designed as a safety net, not a substitute for
+proper partition key design.</p>
+<h3 id="strategies-to-achieve-uniform-distribution">Strategies to
+Achieve Uniform Distribution</h3>
+<p>To ensure uniform distribution across DynamoDB partitions:</p>
+<ul>
+<li><strong>Use High-Cardinality Keys:</strong> Choose attributes with
+many distinct values, such as UUIDs, customer IDs, device IDs, or
+transaction IDs.</li>
+<li><strong>Avoid Monotonic or Low-Cardinality Keys:</strong> Avoid
+using dates, statuses (e.g., <code>active</code> or
+<code>pending</code>), or boolean flags as the sole partition key, as
+these naturally concentrate traffic into a single partition.</li>
+<li><strong>Implement Write Sharding (Salting):</strong> If a specific
+key must absorb massive write volumes, append a random or calculated
+suffix (e.g., <code>UserID_0</code> to <code>UserID_9</code>) to scatter
+writes across multiple distinct physical partitions, then query across
+them via parallel reads.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/why-use-uniform-partition-keys-in-dynamo-db';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

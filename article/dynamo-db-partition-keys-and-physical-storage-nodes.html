@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Keys and Physical Storage Nodes - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB achieves horizontal scale by mapping partition keys to physical storage nodes through an automated hashing mechanism. This article explores how DynamoDB processes a partition key, hashes its value to assign data to logical partitions, and">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-keys-and-physical-storage-nodes">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Keys and Physical Storage Nodes - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-keys-and-physical-storage-nodes" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB achieves horizontal scale by mapping partition keys to physical storage nodes through an automated hashing mechanism. This article explores how DynamoDB processes a partition key, hashes its value to assign data to logical partitions, and" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-keys-and-physical-storage-nodes">DynamoDB
+Partition Keys and Physical Storage Nodes</h1>
+<p>Amazon DynamoDB achieves horizontal scale by mapping partition keys
+to physical storage nodes through an automated hashing mechanism. This
+article explores how DynamoDB processes a partition key, hashes its
+value to assign data to logical partitions, and ultimately maps those
+partitions across a distributed fleet of replicated storage nodes to
+deliver consistent, single-digit millisecond latency at any scale.</p>
+<h3 id="the-role-of-the-partition-key-and-hashing">The Role of the
+Partition Key and Hashing</h3>
+<p>Every item stored in a DynamoDB table requires a primary key. When
+using a simple primary key (partition key only) or a composite primary
+key (partition key and sort key), the partition key acts as the input to
+an internal, deterministic hash function.</p>
+<p>When a read or write request enters DynamoDB, the service runs the
+partition key through this hashing algorithm. The resulting 128-bit hash
+value determines the specific logical partition responsible for storing
+that item. Because identical partition key values always produce
+identical hash outputs, all items sharing the exact same partition key
+are guaranteed to reside on the same logical partition.</p>
+<h3 id="logical-partitions-vs-physical-storage-nodes">Logical Partitions
+vs. Physical Storage Nodes</h3>
+<p>To understand DynamoDB architecture, you must distinguish between
+logical partitions and physical storage nodes:</p>
+<ul>
+<li><strong>Logical Partitions:</strong> A logical partition is an
+allocation of storage (up to 10 GB) and performance capacity (up to
+1,000 write capacity units or 3,000 read capacity units).</li>
+<li><strong>Physical Storage Nodes:</strong> A storage node is an
+underlying server equipped with Solid State Drives (SSDs) running the
+DynamoDB storage engine. A single physical storage node hosts multiple
+logical partitions from various tables and customers.</li>
+</ul>
+<p>A logical partition does not map to a single isolated physical
+server. Instead, it maps to a <strong>Replication Group</strong>
+consisting of three physical storage nodes distributed across multiple
+Availability Zones (AZs) in an AWS Region. One node acts as the Paxos
+leader responsible for coordinating writes, while the other two act as
+replicas.</p>
+<h3 id="the-request-routing-mechanism">The Request Routing
+Mechanism</h3>
+<p>DynamoDB decouples the application layer from physical hardware using
+an internal routing fleet:</p>
+<ol type="1">
+<li><strong>Request Router:</strong> When an application sends a query,
+read, or write command, it hits a stateless DynamoDB Request
+Router.</li>
+<li><strong>Partition Map Lookup:</strong> The Request Router hashes the
+partition key and checks an internal routing cache (the Partition Map)
+to see which logical partition covers that hash range.</li>
+<li><strong>Physical Forwarding:</strong> The router identifies the
+replication group of physical storage nodes assigned to that logical
+partition and forwards the request directly to the appropriate physical
+node (the leader for writes, or any healthy node for eventually
+consistent reads).</li>
+</ol>
+<h3 id="partition-splitting-and-node-reallocation">Partition Splitting
+and Node Reallocation</h3>
+<p>As a table grows, DynamoDB automatically scales without service
+interruption through partition splitting. A partition split occurs
+when:</p>
+<ul>
+<li>The data allocated to a logical partition exceeds 10 GB.</li>
+<li>The workload on a partition exceeds 1,000 WCUs or 3,000 RCUs.</li>
+</ul>
+<p>When a split happens, DynamoDB allocates a new logical partition,
+divides the hash space, and rebalances the data. The new logical
+partition is often placed on a different replication group across
+different physical storage nodes. This dynamic reallocation spreads the
+compute and I/O workload across a wider footprint of physical
+hardware.</p>
+<h3 id="architectural-implications-for-key-design">Architectural
+Implications for Key Design</h3>
+<p>Because physical nodes are assigned based on hash distribution,
+uniform partition key access is critical. If your application
+concentrates traffic on a small subset of partition keys—known as a "hot
+key" scenario—requests funnel into a single logical partition mapped to
+a single physical replication group.</p>
+<p>Even though DynamoDB uses adaptive capacity to temporarily shift
+unused throughput from other partitions, severe hot keys will eventually
+exhaust the throughput limits of the physical storage nodes serving that
+partition. Designing high-cardinality partition keys ensures that the
+hash values distribute evenly across the entire range of logical
+partitions and physical storage nodes.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-keys-and-physical-storage-nodes';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

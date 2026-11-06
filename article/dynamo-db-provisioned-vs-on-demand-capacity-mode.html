@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Provisioned vs On-Demand Capacity Mode - dynamodb</title>
+    <meta name="description" content="Choosing between Amazon DynamoDB&#39;s provisioned and on-demand capacity modes centers on a fundamental trade-off: cost efficiency versus operational simplicity and elasticity. On-demand mode eliminates capacity planning by automatically handling unpredictab">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-provisioned-vs-on-demand-capacity-mode">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Provisioned vs On-Demand Capacity Mode - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-provisioned-vs-on-demand-capacity-mode" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Choosing between Amazon DynamoDB&#39;s provisioned and on-demand capacity modes centers on a fundamental trade-off: cost efficiency versus operational simplicity and elasticity. On-demand mode eliminates capacity planning by automatically handling unpredictab" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-provisioned-vs-on-demand-capacity-mode">DynamoDB
+Provisioned vs On-Demand Capacity Mode</h1>
+<p>Choosing between Amazon DynamoDB's provisioned and on-demand capacity
+modes centers on a fundamental trade-off: cost efficiency versus
+operational simplicity and elasticity. On-demand mode eliminates
+capacity planning by automatically handling unpredictable traffic spikes
+at a higher price per request, while provisioned mode provides
+significantly lower costs for predictable workloads at the risk of
+throttling and resource management overhead.</p>
+<h3 id="the-primary-trade-off-cost-vs-elasticity">The Primary Trade-Off:
+Cost vs. Elasticity</h3>
+<p>The central decision rests on how well you can predict your
+application's traffic patterns and how much you are willing to pay for
+automatic management:</p>
+<ul>
+<li><strong>On-Demand Mode prioritizes elasticity and ease of
+use.</strong> You pay strictly for the read and write operations your
+application performs. There is no capacity forecasting, and DynamoDB
+instantly accommodates sudden bursts of traffic up to double the
+previous peak. The trade-off is financial: unit-for-unit, on-demand
+requests cost roughly five to seven times more than the baseline cost of
+provisioned units.</li>
+<li><strong>Provisioned Mode prioritizes cost efficiency and
+predictability.</strong> You configure specific Read Capacity Units
+(RCUs) and Write Capacity Units (WCUs). When utilization is high and
+steady, this mode is drastically cheaper, especially when combined with
+DynamoDB Reserved Capacity. The trade-off is operational complexity and
+throttling risk: if traffic surges faster than DynamoDB auto-scaling can
+adjust, surplus requests are throttled and fail.</li>
+</ul>
+<h3 id="understanding-on-demand-mode">Understanding On-Demand Mode</h3>
+<p>On-demand mode functions on a pay-per-request model. It requires no
+baseline threshold settings.</p>
+<ul>
+<li><strong>Instant Scaling:</strong> It handles sudden, sharp traffic
+spikes without throttling, provided the surge does not exceed double the
+previously achieved peak within a short window.</li>
+<li><strong>Zero Idle Cost:</strong> If an application receives zero
+requests, read and write charges drop to zero (storage charges still
+apply).</li>
+<li><strong>Ideal Scenarios:</strong> New applications with unknown
+adoption patterns, highly variable workloads, batch jobs that run
+intermittently, or serverless architectures with spiky traffic.</li>
+</ul>
+<h3 id="understanding-provisioned-mode">Understanding Provisioned
+Mode</h3>
+<p>Provisioned mode requires specifying throughput thresholds, often
+managed via Application Auto Scaling to adjust capacity up or down based
+on target utilization metrics.</p>
+<ul>
+<li><strong>Cost Control:</strong> Unit costs are much lower. For
+consistent, 24/7 high-volume applications, provisioned mode yields
+massive financial savings compared to on-demand.</li>
+<li><strong>Auto-Scaling Lag:</strong> Auto-scaling is reactive rather
+than instantaneous. It typically takes several minutes to detect a
+sustained increase and provision additional capacity, which can result
+in <code>ProvisionedThroughputExceededException</code> errors during
+sudden traffic spikes.</li>
+<li><strong>Ideal Scenarios:</strong> Applications with well-understood,
+stable traffic patterns, workloads with gradual growth, or systems
+operating at a high, steady baseline where cost reduction is a primary
+operational objective.</li>
+</ul>
+<h3 id="key-decision-factors">Key Decision Factors</h3>
+<p>To choose the right mode, evaluate your workload against three main
+criteria:</p>
+<ol type="1">
+<li><strong>Traffic Predictability:</strong> If traffic is smooth,
+steady, or ramps up gradually, provisioned capacity is usually the
+superior choice. If traffic is spiky, bursty, or unpredictable,
+on-demand protects against throttling.</li>
+<li><strong>Average Utilization:</strong> If your provisioned capacity
+operates at less than 15–20% average utilization because you must
+over-provision to handle peaks, on-demand mode may actually be cheaper
+despite the higher unit cost.</li>
+<li><strong>Management Overhead:</strong> Teams wanting zero operational
+burden regarding capacity management benefit from on-demand mode,
+trading a higher AWS bill for reduced engineering effort.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-provisioned-vs-on-demand-capacity-mode';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Re-balancing After Bulk Deletion - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages storage re-balancing after bulk item deletions through an automated, internal lifecycle involving storage engine compaction, partition consolidation, and capacity reallocation. When large volumes of data are deleted—either through">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-re-balancing-after-bulk-deletion">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Re-balancing After Bulk Deletion - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-re-balancing-after-bulk-deletion" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages storage re-balancing after bulk item deletions through an automated, internal lifecycle involving storage engine compaction, partition consolidation, and capacity reallocation. When large volumes of data are deleted—either through" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-re-balancing-after-bulk-deletion">DynamoDB
+Partition Re-balancing After Bulk Deletion</h1>
+<p>Amazon DynamoDB manages storage re-balancing after bulk item
+deletions through an automated, internal lifecycle involving storage
+engine compaction, partition consolidation, and capacity reallocation.
+When large volumes of data are deleted—either through manual deletion
+operations or the Time to Live (TTL) feature—DynamoDB does not instantly
+shrink allocated physical boundaries. Instead, it reclaims space
+asynchronously at the storage tier and automatically merges
+underutilized partitions in the background to optimize routing,
+capacity, and resource density.</p>
+<h3 id="asynchronous-storage-reclamation-and-compaction">Asynchronous
+Storage Reclamation and Compaction</h3>
+<p>At the individual partition level, data is stored across a three-node
+replication group using SSD-backed B-trees. When items are removed in
+bulk via <code>DeleteItem</code> or <code>BatchWriteItem</code>,
+DynamoDB initially marks these records for deletion or modifies the
+B-tree leaf nodes directly.</p>
+<p>The physical disk space is not instantly released back to the
+underlying operating system. Instead, DynamoDB runs asynchronous
+background compaction and garbage collection processes. These tasks
+de-fragment the B-tree nodes, prune deleted data pages, and reclaim
+unused storage blocks, making the space available for future writes
+within that partition.</p>
+<h3 id="partition-consolidation-and-merging">Partition Consolidation and
+Merging</h3>
+<p>DynamoDB partitions automatically split when a partition exceeds 10
+GB of storage or exceeds its throughput limits (1,000 WCUs or 3,000
+RCUs). Historically, partitions could only split and never merged back
+together.</p>
+<p>In modern DynamoDB architecture, AWS employs an automated
+partition-merging mechanism. When bulk deletions significantly lower the
+total storage volume or when read/write traffic remains consistently
+low, the internal storage orchestrator detects adjacent, underutilized
+partitions. DynamoDB then transparently merges these smaller partitions
+back into a single partition. This consolidation process:</p>
+<ul>
+<li>Reclaims excess compute and metadata overhead across the storage
+fleet.</li>
+<li>Reduces partition fragmentation.</li>
+<li>Eliminates the risk of throughput dilution across numerous
+near-empty partitions.</li>
+</ul>
+<h3 id="impact-on-throughput-allocation">Impact on Throughput
+Allocation</h3>
+<p>Every DynamoDB partition holds a fractional slice of the table's
+total provisioned or allocated burst throughput. When a table contains
+numerous empty partitions due to bulk deletion, write and read capacity
+could theoretically become fragmented across partitions that store
+little to no data.</p>
+<p>DynamoDB's global request routers and partition merging resolve this
+issue. As underutilized partitions are consolidated, the provisioned
+throughput (or on-demand capacity allocation) is aggregated back into
+fewer, denser partitions. This ensures that incoming queries and writes
+have access to maximum throughput thresholds per partition without
+causing artificial throttling.</p>
+<h3 id="bulk-manual-deletions-vs-time-to-live-ttl">Bulk Manual Deletions
+vs. Time to Live (TTL)</h3>
+<p>The mechanism used to perform bulk deletions alters how the internal
+workload is balanced:</p>
+<ul>
+<li><strong>Manual Bulk Deletions:</strong> Issuing bulk delete requests
+consumes provisioned Write Capacity Units (WCUs) or on-demand write
+units. This generates immediate internal replication traffic across the
+Paxos quorum, updating partition indexes immediately, followed by
+standard background compaction.</li>
+<li><strong>Time to Live (TTL):</strong> DynamoDB handles TTL
+expirations as an internal background task. Expired items are identified
+and cleared without consuming provisioned throughput. Background sweeps
+mark the items for removal, and the storage engine removes them during
+subsequent compaction passes, avoiding contention with user-driven read
+and write workloads.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-re-balancing-after-bulk-deletion';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

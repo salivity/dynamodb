@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Parallel Scan with Segment Parameter - dynamodb</title>
+    <meta name="description" content="This article explains how the Segment parameter enables parallel processing during an Amazon DynamoDB scan operation. By pairing the Segment parameter with TotalSegments, DynamoDB logically partitions table data across multiple independent workers, allowi">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-parallel-scan-with-segment-parameter">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Parallel Scan with Segment Parameter - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-parallel-scan-with-segment-parameter" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the Segment parameter enables parallel processing during an Amazon DynamoDB scan operation. By pairing the Segment parameter with TotalSegments, DynamoDB logically partitions table data across multiple independent workers, allowi" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-parallel-scan-with-segment-parameter">DynamoDB Parallel
+Scan with Segment Parameter</h1>
+<p>This article explains how the <code>Segment</code> parameter enables
+parallel processing during an Amazon DynamoDB scan operation. By pairing
+the <code>Segment</code> parameter with <code>TotalSegments</code>,
+DynamoDB logically partitions table data across multiple independent
+workers, allowing simultaneous execution that significantly reduces
+overall scan duration for large datasets.</p>
+<h3 id="the-mechanics-of-a-parallel-scan">The Mechanics of a Parallel
+Scan</h3>
+<p>By default, a standard DynamoDB scan operation functions
+sequentially. It accesses one page of items at a time and traverses
+internal partitions in a single-threaded manner, which can result in
+high latency when querying millions of items.</p>
+<p>To overcome this limitation, DynamoDB provides parallel scans. This
+mechanism relies on two complementary parameters configured within the
+<code>Scan</code> API request:</p>
+<ul>
+<li><strong><code>TotalSegments</code></strong>: Defines the total
+number of distinct, parallel workers that will scan the table
+concurrently.</li>
+<li><strong><code>Segment</code></strong>: Identifies the specific,
+zero-based slice of data assigned to an individual worker. The value
+ranges from <code>0</code> to <code>TotalSegments - 1</code>.</li>
+</ul>
+<h3 id="how-the-segment-parameter-divides-data">How the
+<code>Segment</code> Parameter Divides Data</h3>
+<p>DynamoDB distributes table items across multiple physical storage
+partitions using an internal hash function applied to each item's
+partition key.</p>
+<p>When you provide the <code>Segment</code> parameter alongside
+<code>TotalSegments</code>, DynamoDB uses an internal mapping algorithm
+to assign a specific subset of these physical partitions to that
+designated segment.</p>
+<p>Each worker process or thread issues a separate <code>Scan</code>
+request specifying its unique <code>Segment</code> number. Because the
+data subsets are mathematically mutually exclusive, every worker scans
+its designated segment independently without reading overlapping
+items.</p>
+<h3 id="independent-execution-and-pagination">Independent Execution and
+Pagination</h3>
+<p>The <code>Segment</code> parameter creates complete operational
+isolation for each worker:</p>
+<ul>
+<li><strong>Isolated Pagination</strong>: DynamoDB paginates results per
+segment. When a single <code>Scan</code> request returns a 1 MB limit or
+reaches the end of an evaluation, it returns a
+<code>LastEvaluatedKey</code> specific solely to that assigned
+segment.</li>
+<li><strong>Independent Checkpointing</strong>: If a worker fails, only
+that specific <code>Segment</code> needs to be restarted using its own
+<code>LastEvaluatedKey</code>, without disrupting the progress of other
+concurrent threads.</li>
+<li><strong>Distributed Workloads</strong>: Workers do not need to
+coordinate with each other in real-time. You can run segments across
+separate threads, containers, or distributed serverless compute
+environments like AWS Lambda.</li>
+</ul>
+<h3 id="performance-impact-and-considerations">Performance Impact and
+Considerations</h3>
+<p>Using the <code>Segment</code> parameter transforms the scan from an
+I/O-bound sequential pipeline into a scalable, distributed
+operation:</p>
+<ul>
+<li><strong>Linear Execution Speed</strong>: Scanning a large table with
+10 segments can approach a 10x reduction in total wall-clock execution
+time compared to a single-threaded scan, provided sufficient Read
+Capacity Units (RCUs) are available.</li>
+<li><strong>Throughput Consumption</strong>: Parallel scans consume RCUs
+rapidly. The value chosen for <code>TotalSegments</code> should be tuned
+based on the table's provisioned or on-demand read capacity to avoid
+triggering <code>ProvisionedThroughputExceededException</code>
+errors.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-parallel-scan-with-segment-parameter';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

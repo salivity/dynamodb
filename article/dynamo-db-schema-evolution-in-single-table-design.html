@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Schema Evolution in Single-Table Design - dynamodb</title>
+    <meta name="description" content="Single-table design in Amazon DynamoDB optimizes performance and cost by consolidating multiple entity types into one physical table, but evolving data structures within this pattern requires deliberate planning. While DynamoDB is fundamentally schemaless">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-schema-evolution-in-single-table-design">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Schema Evolution in Single-Table Design - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-schema-evolution-in-single-table-design" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Single-table design in Amazon DynamoDB optimizes performance and cost by consolidating multiple entity types into one physical table, but evolving data structures within this pattern requires deliberate planning. While DynamoDB is fundamentally schemaless" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-schema-evolution-in-single-table-design">DynamoDB
+Schema Evolution in Single-Table Design</h1>
+<p>Single-table design in Amazon DynamoDB optimizes performance and cost
+by consolidating multiple entity types into one physical table, but
+evolving data structures within this pattern requires deliberate
+planning. While DynamoDB is fundamentally schemaless at the attribute
+level, the access patterns, composite primary keys, and Global Secondary
+Indexes (GSIs) create an implicit schema that must be managed. This
+article explains how to handle schema and data format evolution in a
+single-table architecture using strategies like application-layer
+transformations, item versioning, lazy migrations, and managed index
+updates.</p>
+<h2 id="the-dual-nature-of-schema-in-dynamodb">The Dual Nature of Schema
+in DynamoDB</h2>
+<p>DynamoDB only enforces data types on the primary key attributes
+(Partition Key and Sort Key) and any configured index keys. All other
+attributes within an item are entirely schemaless.</p>
+<p>In a single-table design, data format changes fall into two distinct
+categories:</p>
+<ol type="1">
+<li><strong>Payload Evolution:</strong> Changes to standard attributes
+(e.g., renaming a field, changing a data type, adding/removing
+properties).</li>
+<li><strong>Key and Access Pattern Evolution:</strong> Changes that
+affect how items are identified, queried, or indexed via Partition Keys
+(PK), Sort Keys (SK), or Global Secondary Indexes (GSIs).</li>
+</ol>
+<h2 id="handling-payload-attribute-evolution">Handling Payload Attribute
+Evolution</h2>
+<p>When changes do not affect primary keys or index attributes, DynamoDB
+requires no physical table alterations. The application handles the
+evolution using several techniques.</p>
+<h3 id="application-layer-adapters-and-defaulting">Application-Layer
+Adapters and Defaulting</h3>
+<p>The most resilient way to handle attribute changes is within the
+application's data access layer (DAL) or object-relational mapping (ORM)
+layer.</p>
+<ul>
+<li><strong>Tolerant Reader Pattern:</strong> Ensure the application
+accepts missing fields, unexpected fields, and deprecated formats
+without failing.</li>
+<li><strong>Sensible Defaults:</strong> If a new required field is
+introduced, the application layer should fall back to a default value
+when reading legacy items that lack the attribute.</li>
+<li><strong>Type Normalization:</strong> When changing data types (e.g.,
+moving from a string timestamp to an epoch integer), the application
+read path should check the attribute type and convert it to the internal
+domain model automatically.</li>
+</ul>
+<h3 id="lazy-migration-read-repair">Lazy Migration (Read-Repair)</h3>
+<p>Rather than executing a bulk update across millions of records, lazy
+migration updates items as they are naturally accessed:</p>
+<ol type="1">
+<li>The application reads an item in the old format.</li>
+<li>The domain layer transforms the item to the new format.</li>
+<li>Upon any subsequent write or explicit update call, the item is
+persisted back to DynamoDB in the new format.</li>
+</ol>
+<p>Over time, active data naturally migrates to the latest format
+without incurring the compute costs or read/write capacity spikes of
+batch migration jobs.</p>
+<h3 id="explicit-item-versioning">Explicit Item Versioning</h3>
+<p>When an entity undergoes a structural change too complex for simple
+fallback defaults, store a schema version attribute on the item:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;PK&quot;</span><span class="fu">:</span> <span class="st">&quot;USER#123&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;SK&quot;</span><span class="fu">:</span> <span class="st">&quot;METADATA&quot;</span><span class="fu">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;SchemaVersion&quot;</span><span class="fu">:</span> <span class="dv">2</span><span class="fu">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;FullName&quot;</span><span class="fu">:</span> <span class="st">&quot;Jane Doe&quot;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Legacy records might feature <code>"SchemaVersion": 1</code> with
+<code>"FirstName"</code> and <code>"LastName"</code> split. The
+application reads <code>SchemaVersion</code> and routes the payload to
+the corresponding deserialization strategy.</p>
+<h2 id="handling-primary-key-and-index-evolution">Handling Primary Key
+and Index Evolution</h2>
+<p>When an evolution requires altering the primary key structure (PK/SK)
+or supporting a new access pattern, the data format change becomes
+structural. Because DynamoDB primary keys are immutable once an item is
+written, existing keys cannot simply be updated.</p>
+<h3 id="adding-new-entities-and-prefixes">Adding New Entities and
+Prefixes</h3>
+<p>Single-table design inherently supports non-breaking additions.
+Because primary keys typically use generic names (e.g., <code>PK</code>
+and <code>SK</code>) with prefixed values (e.g.,
+<code>CUSTOMER#&lt;ID&gt;</code>, <code>ORDER#&lt;ID&gt;</code>),
+introducing a new entity type or relationship requires only defining a
+new prefix pattern. Existing entities and queries remain completely
+unaffected.</p>
+<h3 id="dual-writing-for-key-migrations">Dual-Writing for Key
+Migrations</h3>
+<p>If an existing entity’s key composition must change to support an
+altered access pattern:</p>
+<ol type="1">
+<li><strong>Update the Application:</strong> Deploy code that reads from
+the old key structure but writes to both the old and new key structures
+simultaneously (dual-writing).</li>
+<li><strong>Backfill Historical Data:</strong> Use an asynchronous
+worker, AWS Glue, or an Amazon EMR job to scan the table, transform
+legacy keys into the new format, and write the new records.</li>
+<li><strong>Switch Reads:</strong> Update the application to read from
+the new key structure.</li>
+<li><strong>Remove Dual-Writing and Clean Up:</strong> Decommission
+writes to the legacy format and delete the obsolete records using
+DynamoDB's Time to Live (TTL) or a batch deletion script.</li>
+</ol>
+<h3 id="using-global-secondary-indexes-gsis-for-new-patterns">Using
+Global Secondary Indexes (GSIs) for New Patterns</h3>
+<p>If access patterns change but the primary data does not need key
+restructuring, use sparse GSIs:</p>
+<ul>
+<li>GSIs can be created or deleted on an existing table at any time
+without downtime.</li>
+<li>By populating new GSI attributes on target items, only the relevant
+records project into the new index.</li>
+<li>DynamoDB automatically backfills existing data into a newly created
+GSI as long as the projection attributes exist on the base items.</li>
+</ul>
+<h3 id="asynchronous-transformation-via-dynamodb-streams">Asynchronous
+Transformation via DynamoDB Streams</h3>
+<p>For high-traffic systems where live dual-writing introduces unwanted
+latency or transaction overhead, use DynamoDB Streams coupled with AWS
+Lambda:</p>
+<ol type="1">
+<li>Continue writing data using the legacy format.</li>
+<li>A Lambda function processes the stream of modifications, transforms
+the items into the new format, and writes them back to the table under
+the new key pattern.</li>
+<li>Once backfilling and stream processing are synchronized, switch the
+read and write paths directly to the new format.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-schema-evolution-in-single-table-design';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

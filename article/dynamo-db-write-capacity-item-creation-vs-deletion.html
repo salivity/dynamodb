@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Write Capacity: Item Creation vs Deletion - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB measures database throughput using Write Capacity Units (WCUs), where one standard WCU represents one write per second for an item up to 1 KB in size. While both creating and deleting items consume write capacity, DynamoDB evaluates their">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-write-capacity-item-creation-vs-deletion">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Write Capacity: Item Creation vs Deletion - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-write-capacity-item-creation-vs-deletion" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB measures database throughput using Write Capacity Units (WCUs), where one standard WCU represents one write per second for an item up to 1 KB in size. While both creating and deleting items consume write capacity, DynamoDB evaluates their" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-write-capacity-item-creation-vs-deletion">DynamoDB
+Write Capacity: Item Creation vs Deletion</h1>
+<p>Amazon DynamoDB measures database throughput using Write Capacity
+Units (WCUs), where one standard WCU represents one write per second for
+an item up to 1 KB in size. While both creating and deleting items
+consume write capacity, DynamoDB evaluates their consumption using
+fundamentally different criteria: item creation calculates capacity
+based on the size of the incoming data, whereas item deletion calculates
+capacity based on the size of the existing data being removed. This
+guide breaks down the specific calculation rules, non-existent item
+behaviors, and secondary index impacts for both operations.</p>
+<h2
+id="understanding-the-standard-write-capacity-unit-wcu">Understanding
+the Standard Write Capacity Unit (WCU)</h2>
+<p>DynamoDB uses the Write Capacity Unit as the standard metric for
+write operations across provisioned and on-demand modes. For standard
+writes:</p>
+<ul>
+<li>1 WCU can write an item up to 1 KB in size.</li>
+<li>Any item exceeding a 1 KB boundary is rounded up to the next full
+kilobyte. For example, a write of 1.2 KB consumes 2 WCUs, and a write of
+2.1 KB consumes 3 WCUs.</li>
+</ul>
+<h2 id="write-unit-consumption-for-item-creation-putitem">Write Unit
+Consumption for Item Creation (<code>PutItem</code>)</h2>
+<p>When creating a new item using operations like <code>PutItem</code>,
+DynamoDB calculates the write unit consumption directly from the total
+payload size of the item being created.</p>
+<ul>
+<li><strong>Size Calculation:</strong> DynamoDB sums the length of all
+attribute names and attribute values in the new item.</li>
+<li><strong>WCU Formula:</strong> The total size is rounded up to the
+nearest 1 KB multiplier. An item of 500 bytes consumes 1 WCU. An item of
+3.4 KB consumes 4 WCUs.</li>
+<li><strong>Overwrites:</strong> If a <code>PutItem</code> call replaces
+an existing item with the same primary key, DynamoDB still charges based
+entirely on the size of the <em>new</em> incoming item, completely
+ignoring the size of the item being replaced.</li>
+<li><strong>Failed Conditional Writes:</strong> If an item creation
+request includes a condition expression (e.g.,
+<code>attribute_not_exists(pk)</code>) and that condition fails,
+DynamoDB still consumes write capacity (at least 1 WCU) to evaluate the
+existing item.</li>
+</ul>
+<h2 id="write-unit-consumption-for-item-deletion-deleteitem">Write Unit
+Consumption for Item Deletion (<code>DeleteItem</code>)</h2>
+<p>When removing an item using <code>DeleteItem</code>, write
+consumption is not based on the size of the primary key passed in the
+request. Instead, it is determined by the data stored in the table.</p>
+<ul>
+<li><strong>Size Calculation:</strong> DynamoDB measures the total size
+of the existing item stored in the table, including all of its attribute
+names and values.</li>
+<li><strong>WCU Formula:</strong> The consumed capacity equals the
+stored item's size rounded up to the nearest 1 KB increment. Deleting a
+stored item that measures 4.5 KB consumes 5 WCUs.</li>
+<li><strong>Non-Existent Items:</strong> If a <code>DeleteItem</code>
+request targets a primary key that does not exist in the table, DynamoDB
+still consumes 1 WCU. The system must attempt the write operation to
+confirm the key's absence.</li>
+<li><strong>Conditional Deletes:</strong> If a conditional check on a
+delete request fails, DynamoDB consumes write capacity based on the size
+of the existing item evaluated.</li>
+</ul>
+<h2 id="secondary-index-considerations">Secondary Index
+Considerations</h2>
+<p>Both item creation and deletion trigger write consumption on Local
+Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs):</p>
+<ul>
+<li><strong>Item Creation:</strong> If the new item contains the
+partition or sort key of an index, a corresponding write occurs on that
+index. Capacity consumed on the index is based on the size of the
+projected attributes for that item, rounded up to the next 1 KB
+increment.</li>
+<li><strong>Item Deletion:</strong> Deleting an item removes its
+corresponding entries across all populated secondary indexes. The
+deletion consumes write capacity on each index equal to the size of the
+projected attributes being removed, rounded up to the nearest 1 KB.</li>
+</ul>
+<h2 id="key-differences-summary">Key Differences Summary</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Metric</th>
+<th style="text-align: left;">Item Creation (<code>PutItem</code>)</th>
+<th style="text-align: left;">Item Deletion
+(<code>DeleteItem</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Size Evaluated</strong></td>
+<td style="text-align: left;">Size of the incoming payload</td>
+<td style="text-align: left;">Size of the existing item in storage</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Formula</strong></td>
+<td
+style="text-align: left;"><code>Ceil(New Item Size in KB)</code></td>
+<td
+style="text-align: left;"><code>Ceil(Stored Item Size in KB)</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Empty / Non-Existent
+Target</strong></td>
+<td style="text-align: left;">Consumes WCUs based on incoming size</td>
+<td style="text-align: left;">Consumes 1 WCU</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Index Impact</strong></td>
+<td style="text-align: left;">Consumes index WCUs if indexed attributes
+are present</td>
+<td style="text-align: left;">Consumes index WCUs to remove projected
+data</td>
+</tr>
+</tbody>
+</table></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-write-capacity-item-creation-vs-deletion';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracking DynamoDB Configuration Changes Over Time - dynamodb</title>
+    <meta name="description" content="Tracking configuration changes to Amazon DynamoDB tables is essential for maintaining security posture, ensuring regulatory compliance, and troubleshooting unexpected application behavior. The primary mechanism for recording and auditing these changes ove">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/tracking-dynamo-db-configuration-changes-over-time">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tracking DynamoDB Configuration Changes Over Time - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/tracking-dynamo-db-configuration-changes-over-time" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Tracking configuration changes to Amazon DynamoDB tables is essential for maintaining security posture, ensuring regulatory compliance, and troubleshooting unexpected application behavior. The primary mechanism for recording and auditing these changes ove" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="tracking-dynamodb-configuration-changes-over-time">Tracking
+DynamoDB Configuration Changes Over Time</h1>
+<p>Tracking configuration changes to Amazon DynamoDB tables is essential
+for maintaining security posture, ensuring regulatory compliance, and
+troubleshooting unexpected application behavior. The primary mechanism
+for recording and auditing these changes over time is AWS Config, which
+continuously monitors and stores the state of DynamoDB resources.
+Complemented by AWS CloudTrail for API-level auditing, AWS Config
+provides a detailed timeline of metadata and schema updates, enabling
+administrators to visualize historical configurations and verify
+compliance against predefined governance rules.</p>
+<h2 id="the-core-mechanism-aws-config">The Core Mechanism: AWS
+Config</h2>
+<p>AWS Config is fully integrated with Amazon DynamoDB to deliver
+continuous resource tracking. When enabled, AWS Config detects any
+create, update, or delete operations that modify a DynamoDB table's
+properties and generates a Configuration Item (CI). A Configuration Item
+represents a point-in-time snapshot of the resource’s configuration
+attributes, relationships, and metadata.</p>
+<p>AWS Config tracks a wide range of DynamoDB configuration parameters,
+including:</p>
+<ul>
+<li><strong>Billing Mode and Capacity Settings:</strong> Transitions
+between On-Demand and Provisioned capacity modes, as well as
+modifications to read and write capacity units (RCUs and WCUs).</li>
+<li><strong>Secondary Indexes:</strong> The addition, modification, or
+removal of Global Secondary Indexes (GSIs) and Local Secondary Indexes
+(LSIs).</li>
+<li><strong>Security Settings:</strong> Encryption at rest settings (AWS
+KMS key management) and point-in-time recovery (PITR)
+configurations.</li>
+<li><strong>Feature Configurations:</strong> Changes to Time to Live
+(TTL), DynamoDB Streams, and table-level tags.</li>
+</ul>
+<h2 id="viewing-historical-configurations">Viewing Historical
+Configurations</h2>
+<p>AWS Config stores recorded Configuration Items in an Amazon S3 bucket
+and provides a visual timeline within the AWS Management Console. Users
+can select any DynamoDB table and view its complete configuration
+timeline. This timeline displays:</p>
+<ol type="1">
+<li><strong>State Diffs:</strong> A side-by-side comparison of the
+resource state before and after a modification.</li>
+<li><strong>Associated Events:</strong> The specific CloudTrail event
+that triggered the change.</li>
+<li><strong>Compliance History:</strong> How configuration updates
+affected compliance with active AWS Config rules (such as checking
+whether tables are encrypted using customer-managed keys).</li>
+</ol>
+<h2 id="the-role-of-aws-cloudtrail">The Role of AWS CloudTrail</h2>
+<p>While AWS Config records the <em>state</em> of the table before and
+after a change, AWS CloudTrail provides the <em>context</em> surrounding
+the change. CloudTrail logs the control-plane API calls responsible for
+modifying DynamoDB table configurations, including calls such as
+<code>CreateTable</code>, <code>UpdateTable</code>,
+<code>DeleteTable</code>, <code>UpdateTimeToLive</code>, and
+<code>TagResource</code>.</p>
+<p>Through CloudTrail, teams can identify the specific IAM user or role
+that initiated the change, the source IP address, and the exact
+timestamp. When used together, AWS Config and AWS CloudTrail provide a
+complete audit trail: CloudTrail reveals who made the request, and AWS
+Config reveals how the table's state changed as a result.</p>
+<h2 id="how-to-enable-dynamodb-tracking">How to Enable DynamoDB
+Tracking</h2>
+<p>To track table modifications, navigate to the AWS Config console and
+configure the recorder to include the <code>AWS::DynamoDB::Table</code>
+resource type. Once recording is active:</p>
+<ol type="1">
+<li>AWS Config delivers daily configuration snapshots and change
+notifications to your designated Amazon S3 bucket and Amazon SNS
+topic.</li>
+<li>You can query past configuration states programmatically using the
+AWS CLI or SDKs via the <code>GetResourceConfigHistory</code> API.</li>
+<li>You can set up managed rules (such as
+<code>dynamodb-pitr-enabled</code> or
+<code>dynamodb-table-encrypted-kms</code>) to automatically flag
+non-compliant configuration changes as they occur.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/tracking-dynamo-db-configuration-changes-over-time';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

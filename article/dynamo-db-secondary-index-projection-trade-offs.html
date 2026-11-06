@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Secondary Index Projection Trade-Offs - dynamodb</title>
+    <meta name="description" content="When designing secondary indexes in Amazon DynamoDB, projecting all attributes eliminates the need for expensive base-table lookups during queries, but it introduces significant drawbacks. The primary trade-off of choosing the ALL projection type is signi">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-secondary-index-projection-trade-offs">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Secondary Index Projection Trade-Offs - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-secondary-index-projection-trade-offs" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When designing secondary indexes in Amazon DynamoDB, projecting all attributes eliminates the need for expensive base-table lookups during queries, but it introduces significant drawbacks. The primary trade-off of choosing the ALL projection type is signi" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-secondary-index-projection-trade-offs">DynamoDB
+Secondary Index Projection Trade-Offs</h1>
+<p>When designing secondary indexes in Amazon DynamoDB, projecting all
+attributes eliminates the need for expensive base-table lookups during
+queries, but it introduces significant drawbacks. The primary trade-off
+of choosing the <code>ALL</code> projection type is significantly
+increased storage cost and higher write amplification, as every
+attribute is duplicated and every update to the base table consumes
+additional Write Capacity Units (WCUs) on the index.</p>
+<h3 id="the-trade-off-read-performance-vs-write-and-storage-costs">The
+Trade-Off: Read Performance vs. Write and Storage Costs</h3>
+<p>In DynamoDB, Global Secondary Indexes (GSIs) and Local Secondary
+Indexes (LSIs) allow you to query data using alternate partition and
+sort keys. When you define an index, you must choose which attributes
+from the base table to project into it: <code>KEYS_ONLY</code>,
+<code>INCLUDE</code> (specific attributes), or <code>ALL</code>.</p>
+<p>Choosing <code>ALL</code> maximizes read efficiency. When an index
+contains every attribute from the parent table, queries against the
+index are completely self-contained. The application never needs to
+perform a secondary "fetch" (a <code>GetItem</code> or read against the
+base table) to retrieve non-indexed data. This minimizes read latency
+and simplifies query logic.</p>
+<p>However, this convenience comes at a steep price across two major
+dimensions:</p>
+<h4 id="1-increased-write-capacity-consumption-write-amplification">1.
+Increased Write Capacity Consumption (Write Amplification)</h4>
+<p>When an index projects <code>ALL</code> attributes, any update,
+insert, or delete operation on the base table automatically synchronizes
+to the secondary index.</p>
+<ul>
+<li>Every time a write occurs in the base table, DynamoDB consumes write
+capacity units (WCUs) on both the base table and any affected GSIs.</li>
+<li>With <code>ALL</code> projection, an update to <em>any</em>
+attribute—even one not used as the index’s partition or sort
+key—triggers a write to the index.</li>
+<li>If the index only projected <code>KEYS_ONLY</code> or a subset via
+<code>INCLUDE</code>, writes that do not modify the indexed keys or
+projected attributes might avoid updating the index altogether, saving
+substantial WCU costs.</li>
+</ul>
+<h4 id="2-doubled-storage-footprint">2. Doubled Storage Footprint</h4>
+<p>Projecting <code>ALL</code> effectively duplicates the entire base
+table's dataset within the secondary index.</p>
+<ul>
+<li>DynamoDB charges for the storage used by both the base table and all
+secondary indexes.</li>
+<li>If a base table is 500 GB and has two GSIs that both use
+<code>ALL</code> projections, total storage usage balloons to roughly
+1.5 TB.</li>
+<li>This duplication directly scales up monthly storage billing without
+providing any new data.</li>
+</ul>
+<h3 id="when-to-avoid-projecting-all-attributes">When to Avoid
+Projecting All Attributes</h3>
+<p>Using <code>ALL</code> is an anti-pattern for write-heavy workloads
+with large items. If items contain large payloads (such as large text
+blobs or JSON documents) that are frequently updated, the operational
+cost of syncing those items to the index will rapidly outpace any
+performance benefit gained during reads.</p>
+<p>To optimize cost and performance, project only the specific
+attributes your access patterns strictly require using the
+<code>INCLUDE</code> projection type, or use <code>KEYS_ONLY</code> if
+your application can tolerate occasional fetches against the base
+table.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-secondary-index-projection-trade-offs';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

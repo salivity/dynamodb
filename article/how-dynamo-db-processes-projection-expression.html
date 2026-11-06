@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Processes ProjectionExpression - dynamodb</title>
+    <meta name="description" content="This article examines how Amazon DynamoDB processes data retrieval when using the ProjectionExpression parameter. You will learn the exact sequence of events DynamoDB uses to fetch and return data, how server-side attribute filtering functions, the impact">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-projection-expression">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Processes ProjectionExpression - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-projection-expression" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how Amazon DynamoDB processes data retrieval when using the ProjectionExpression parameter. You will learn the exact sequence of events DynamoDB uses to fetch and return data, how server-side attribute filtering functions, the impact" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-processes-projectionexpression">How DynamoDB
+Processes ProjectionExpression</h1>
+<p>This article examines how Amazon DynamoDB processes data retrieval
+when using the <code>ProjectionExpression</code> parameter. You will
+learn the exact sequence of events DynamoDB uses to fetch and return
+data, how server-side attribute filtering functions, the impact on Read
+Capacity Unit (RCU) consumption, and the network-level benefits of
+retrieving specific attributes instead of entire items.</p>
+<h2 id="the-data-retrieval-lifecycle">The Data Retrieval Lifecycle</h2>
+<p>When an operation such as <code>GetItem</code>,
+<code>BatchGetItem</code>, <code>Query</code>, or <code>Scan</code>
+includes a <code>ProjectionExpression</code>, DynamoDB follows a
+specific execution order:</p>
+<ol type="1">
+<li><strong>Storage Read:</strong> DynamoDB locates and reads the
+complete item from the underlying partition storage.</li>
+<li><strong>Server-Side Extraction:</strong> The DynamoDB engine
+inspects the retrieved item and strips away all attributes that were not
+specified in the <code>ProjectionExpression</code> string.</li>
+<li><strong>Payload Construction:</strong> DynamoDB constructs a
+serialized response payload containing only the requested subset of
+attributes.</li>
+<li><strong>Network Transfer:</strong> The final pruned JSON response is
+transmitted over the network back to the client application.</li>
+</ol>
+<h2 id="read-capacity-unit-rcu-calculation">Read Capacity Unit (RCU)
+Calculation</h2>
+<p>A common misconception is that specifying a
+<code>ProjectionExpression</code> reduces the consumed Read Capacity
+Units (RCUs). In DynamoDB, RCUs are calculated based on the total size
+of the item read from the storage layer, not the size of the data
+returned to the client:</p>
+<ul>
+<li>For <code>GetItem</code>, DynamoDB calculates the item size by
+rounding up to the nearest 4 KB chunk. If a record is 6 KB and the
+<code>ProjectionExpression</code> narrows the response down to a
+200-byte attribute, DynamoDB still bills for reading the full 6 KB
+(which consumes 2 strongly consistent RCUs, or 1 eventually consistent
+RCU).</li>
+<li>For <code>Query</code> and <code>Scan</code> operations, the 1 MB
+evaluation limit applies <em>before</em> the projection is executed.
+DynamoDB reads items up to the 1 MB threshold, measures the read
+capacity based on the unprojected data, applies both
+<code>FilterExpression</code> and <code>ProjectionExpression</code>, and
+then returns the remaining data.</li>
+</ul>
+<h2 id="network-performance-and-serialization-benefits">Network
+Performance and Serialization Benefits</h2>
+<p>While <code>ProjectionExpression</code> does not reduce read
+provisioning costs, it significantly optimizes network performance:</p>
+<ul>
+<li><strong>Reduced Bandwidth Consumption:</strong> By eliminating
+unneeded attributes (such as large binary blobs, embedded lists, or
+heavy text strings), the wire payload is kept as small as possible.</li>
+<li><strong>Lower Latency:</strong> Smaller payloads reduce TLS transfer
+time and overall round-trip latency, especially in high-throughput
+microservices architectures.</li>
+<li><strong>Client-Side Efficiency:</strong> Application memory overhead
+and JSON deserialization times drop because the SDK processes
+significantly smaller data structures.</li>
+</ul>
+<h2 id="usage-with-secondary-indexes">Usage with Secondary Indexes</h2>
+<p>When querying a Global Secondary Index (GSI) or Local Secondary Index
+(LSI), <code>ProjectionExpression</code> behavior depends on the index's
+projection configuration:</p>
+<ul>
+<li><strong>KEYS_ONLY or INCLUDE Indexes:</strong> If you request an
+attribute in the <code>ProjectionExpression</code> that is not projected
+into the index, DynamoDB will reject the request with a validation
+exception (for GSIs) or perform an additional read against the base
+table (for LSIs), consuming additional base-table RCUs.</li>
+<li><strong>ALL Indexes:</strong> Any attribute can be included in the
+<code>ProjectionExpression</code> without penalty, as the index contains
+a complete replica of the base table's attributes.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-projection-expression';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

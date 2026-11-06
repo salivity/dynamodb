@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Force Strongly Consistent Reads in DynamoDB - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB defaults to eventually consistent reads to maximize read throughput and minimize latency, but certain applications require access to the most up-to-date data immediately after a write. To force a strongly consistent read in DynamoDB, you m">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-to-force-strongly-consistent-reads-in-dynamo-db">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Force Strongly Consistent Reads in DynamoDB - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-to-force-strongly-consistent-reads-in-dynamo-db" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB defaults to eventually consistent reads to maximize read throughput and minimize latency, but certain applications require access to the most up-to-date data immediately after a write. To force a strongly consistent read in DynamoDB, you m" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-force-strongly-consistent-reads-in-dynamodb">How to Force
+Strongly Consistent Reads in DynamoDB</h1>
+<p>Amazon DynamoDB defaults to eventually consistent reads to maximize
+read throughput and minimize latency, but certain applications require
+access to the most up-to-date data immediately after a write. To force a
+strongly consistent read in DynamoDB, you must set the
+<code>ConsistentRead</code> parameter to <code>true</code> in your API
+request. This article explains how the <code>ConsistentRead</code>
+parameter works, which operations support it, and the associated
+trade-offs in cost and performance.</p>
+<h3 id="the-consistentread-parameter">The ConsistentRead Parameter</h3>
+<p>When querying or retrieving items from DynamoDB, setting
+<code>ConsistentRead=true</code> guarantees that the response reflects
+all successful write operations that occurred prior to the read. If this
+parameter is omitted or explicitly set to <code>false</code>, DynamoDB
+returns an eventually consistent read, which might return stale data if
+a write recently occurred.</p>
+<h3 id="supported-api-operations">Supported API Operations</h3>
+<p>The <code>ConsistentRead</code> parameter is supported in data
+retrieval operations targeting DynamoDB tables and Local Secondary
+Indexes (LSIs). The primary operations include:</p>
+<ul>
+<li><strong>GetItem</strong>: Retrieves a single item by primary
+key.</li>
+<li><strong>BatchGetItem</strong>: Retrieves up to 100 items from one or
+more tables.</li>
+<li><strong>Query</strong>: Finds items based on primary key attribute
+values.</li>
+<li><strong>Scan</strong>: Reads every item in a table or secondary
+index.</li>
+</ul>
+<p><em>Note:</em> Strongly consistent reads are <strong>not
+supported</strong> on Global Secondary Indexes (GSIs). Requests
+targeting a GSI must use eventual consistency. Additionally, strongly
+consistent reads are not supported across multiple AWS regions via
+DynamoDB Global Tables.</p>
+<h3 id="cost-and-latency-implications">Cost and Latency
+Implications</h3>
+<p>Enabling strongly consistent reads impacts both throughput
+consumption and performance:</p>
+<ul>
+<li><strong>Read Capacity Units (RCU):</strong> An eventually consistent
+read of up to 4 KB consumes 0.5 RCUs. A strongly consistent read of the
+same size consumes 1 full RCU, effectively doubling the read capacity
+cost.</li>
+<li><strong>Latency:</strong> Strongly consistent reads may experience
+slightly higher latency because the request queries multiple storage
+nodes to verify the latest data state before returning.</li>
+<li><strong>Availability:</strong> In the rare event of a network
+partition or node outage, strongly consistent reads might fail with a
+500-series error where an eventually consistent read could still
+succeed.</li>
+</ul>
+<h3 id="implementation-example">Implementation Example</h3>
+<p>In the AWS SDK (such as the Python <code>boto3</code> library), you
+apply the parameter directly to the read call:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> boto3</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>dynamodb <span class="op">=</span> boto3.client(<span class="st">&#39;dynamodb&#39;</span>)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>response <span class="op">=</span> dynamodb.get_item(</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    TableName<span class="op">=</span><span class="st">&#39;Users&#39;</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    Key<span class="op">=</span>{</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&#39;UserId&#39;</span>: {<span class="st">&#39;S&#39;</span>: <span class="st">&#39;12345&#39;</span>}</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    },</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    ConsistentRead<span class="op">=</span><span class="va">True</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>By providing <code>ConsistentRead=True</code>, DynamoDB bypasses
+eventual consistency and ensures your application receives the latest
+written state for the specified item.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-to-force-strongly-consistent-reads-in-dynamo-db';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using DynamoDB Contains Function for List Membership - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB allows you to evaluate whether a list attribute contains a specific element by using the contains(path, operand) function within a condition expression. This article explains how DynamoDB processes this function against List (L) data types">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/using-dynamo-db-contains-function-for-list-membership">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Using DynamoDB Contains Function for List Membership - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/using-dynamo-db-contains-function-for-list-membership" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB allows you to evaluate whether a list attribute contains a specific element by using the contains(path, operand) function within a condition expression. This article explains how DynamoDB processes this function against List (L) data types" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="using-dynamodb-contains-function-for-list-membership">Using
+DynamoDB Contains Function for List Membership</h1>
+<p>Amazon DynamoDB allows you to evaluate whether a list attribute
+contains a specific element by using the
+<code>contains(path, operand)</code> function within a condition
+expression. This article explains how DynamoDB processes this function
+against List (<code>L</code>) data types, the exact matching rules it
+applies to list elements, its behavior with complex data types, and
+critical considerations regarding data types and performance.</p>
+<h3 id="how-contains-operates-on-dynamodb-lists">How
+<code>contains</code> Operates on DynamoDB Lists</h3>
+<p>In DynamoDB condition and filter expressions, the
+<code>contains</code> function takes two parameters:</p>
+<pre class="text"><code>contains(path, operand)</code></pre>
+<p>When <code>path</code> references an attribute of type List
+(<code>L</code>), the function evaluates to <code>TRUE</code> if the
+specified <code>operand</code> matches any individual element within
+that list. Otherwise, it returns <code>FALSE</code>.</p>
+<p>Unlike its behavior on String (<code>S</code>) attributes—where it
+looks for a substring—when applied to a List (<code>L</code>),
+<code>contains</code> looks for <strong>complete element
+equality</strong>.</p>
+<h3 id="exact-match-evaluation-rules">Exact Match Evaluation Rules</h3>
+<p>DynamoDB adheres to strict element-level comparison semantics when
+scanning lists:</p>
+<ul>
+<li><strong>Complete Value Matching:</strong> The <code>operand</code>
+must match the target element entirely. For instance, if a list contains
+the string <code>"database"</code>, <code>contains(myList, :val)</code>
+where <code>:val</code> is <code>"data"</code> will evaluate to
+<code>FALSE</code>.</li>
+<li><strong>Type Strictness:</strong> Lists in DynamoDB can be
+heterogeneous (containing mixed data types). DynamoDB requires that both
+the value and the underlying DynamoDB data type match. An operand of
+type Number (<code>{"N": "100"}</code>) will not match an element of
+type String (<code>{"S": "100"}</code>).</li>
+<li><strong>Case Sensitivity:</strong> For String elements within a
+list, comparisons are strictly case-sensitive. <code>"DevOps"</code>
+will not match <code>"devops"</code>.</li>
+</ul>
+<h3 id="handling-complex-and-nested-data">Handling Complex and Nested
+Data</h3>
+<p>DynamoDB lists can store complex data structures, including Maps
+(<code>M</code>) and nested Lists (<code>L</code>):</p>
+<ul>
+<li><strong>Exact Structure Equality:</strong> If a list contains maps,
+<code>contains</code> evaluates to <code>TRUE</code> only if the
+<code>operand</code> map matches the targeted map element exactly,
+including all keys, nested values, and types.</li>
+<li><strong>No Deep Searching:</strong> The <code>contains</code>
+function does not traverse into nested structures inside list elements.
+For example, you cannot use <code>contains(myList, :nestedValue)</code>
+to find a scalar value nested inside a Map element within that list;
+doing so requires targeting the specific nested path directly (e.g.,
+<code>myList[0].nestedKey = :val</code>).</li>
+</ul>
+<h3 id="example-condition-expression">Example Condition Expression</h3>
+<p>Consider an item representing a project with an assigned user
+list:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ProjectId&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;PRJ-001&quot;</span><span class="fu">},</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;TeamMembers&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;L&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>      <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;alice&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>      <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;bob&quot;</span><span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>      <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;charlie&quot;</span><span class="fu">}</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    <span class="ot">]</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>To conditionally update the project only if <code>"bob"</code> is an
+existing member of the team, the condition expression is structured as
+follows:</p>
+<ul>
+<li><strong>Condition Expression:</strong>
+<code>contains(#members, :user)</code></li>
+<li><strong>Expression Attribute Names:</strong>
+<code>{"#members": "TeamMembers"}</code></li>
+<li><strong>Expression Attribute Values:</strong>
+<code>{":user": {"S": "bob"}}</code></li>
+</ul>
+<p>During evaluation, DynamoDB inspects the <code>TeamMembers</code>
+list element by element. When it encounters the second element
+(<code>{"S": "bob"}</code>), it finds an exact type and value match,
+short-circuits the list traversal, and resolves the condition to
+<code>TRUE</code>.</p>
+<h3 id="performance-and-read-capacity-impact">Performance and Read
+Capacity Impact</h3>
+<p>DynamoDB evaluates condition expressions on the server after reading
+the full item.</p>
+<ul>
+<li>The <code>contains</code> check does not reduce the Read Capacity
+Units (RCUs) consumed for the operation. DynamoDB always consumes RCUs
+based on the total size of the item, regardless of whether the condition
+succeeds or fails.</li>
+<li>For lists that grow significantly, traversing large lists repeatedly
+can add processing overhead. If your access pattern exclusively requires
+testing for item membership among unique scalar values, utilizing a Set
+(<code>SS</code>, <code>NS</code>, or <code>BS</code>) instead of a List
+is often preferred for data integrity, though evaluation mechanics for
+<code>contains</code> remain functionally similar.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/using-dynamo-db-contains-function-for-list-membership';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

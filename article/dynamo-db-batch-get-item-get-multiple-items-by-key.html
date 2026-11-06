@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB BatchGetItem: Get Multiple Items by Key - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, the API call used to retrieve multiple specific items using their primary keys in a single request is BatchGetItem. This operation allows applications to fetch up to 100 items across one or more tables efficiently, reducing network ove">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-batch-get-item-get-multiple-items-by-key">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB BatchGetItem: Get Multiple Items by Key - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-batch-get-item-get-multiple-items-by-key" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, the API call used to retrieve multiple specific items using their primary keys in a single request is BatchGetItem. This operation allows applications to fetch up to 100 items across one or more tables efficiently, reducing network ove" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-batchgetitem-get-multiple-items-by-key">DynamoDB
+BatchGetItem: Get Multiple Items by Key</h1>
+<p>In Amazon DynamoDB, the API call used to retrieve multiple specific
+items using their primary keys in a single request is
+<code>BatchGetItem</code>. This operation allows applications to fetch
+up to 100 items across one or more tables efficiently, reducing network
+overhead compared to executing individual <code>GetItem</code> requests.
+This guide covers how <code>BatchGetItem</code> works, its limits, read
+consistency options, and how to handle partial failures.</p>
+<h2 id="how-batchgetitem-works">How BatchGetItem Works</h2>
+<p>The <code>BatchGetItem</code> operation accepts a list of primary
+keys (partition keys, or partition and sort keys depending on the table
+schema) and returns the corresponding items. It executes these
+retrievals in parallel within DynamoDB.</p>
+<p>Unlike queries or scans, <code>BatchGetItem</code> cannot filter by
+non-key attributes or search ranges without knowing the exact primary
+keys beforehand. Every requested item must be identified by its full
+primary key.</p>
+<h3 id="multi-table-retrieval">Multi-Table Retrieval</h3>
+<p>A single <code>BatchGetItem</code> request can retrieve items from
+multiple tables at once. You define the table name and the list of keys
+corresponding to each table within the <code>RequestItems</code>
+parameter of the payload.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;RequestItems&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;Users&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Keys&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">&quot;UserId&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;user_1&quot;</span><span class="fu">}}</span><span class="ot">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">&quot;UserId&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;user_2&quot;</span><span class="fu">}}</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">},</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;Orders&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Keys&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span><span class="dt">&quot;OrderId&quot;</span><span class="fu">:</span> <span class="fu">{</span><span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;order_100&quot;</span><span class="fu">}}</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h2 id="core-constraints-and-limitations">Core Constraints and
+Limitations</h2>
+<p>When utilizing <code>BatchGetItem</code>, several operational limits
+apply:</p>
+<ul>
+<li><strong>Item Count Limit:</strong> A single request can retrieve a
+maximum of 100 items.</li>
+<li><strong>Payload Size Limit:</strong> The maximum total response size
+is 16 MB. If the data exceeds 16 MB, DynamoDB returns the items up to
+the limit along with unprocessed keys.</li>
+<li><strong>Primary Key Requirement:</strong> You must supply the
+complete primary key for each requested item.</li>
+</ul>
+<h2 id="read-consistency-options">Read Consistency Options</h2>
+<p>By default, <code>BatchGetItem</code> performs eventually consistent
+reads. However, you can configure strongly consistent reads on a
+per-table basis within the request by setting
+<code>ConsistentRead</code> to <code>true</code>. Strongly consistent
+reads consume twice as many read capacity units (RCUs) as eventually
+consistent reads.</p>
+<h2 id="handling-unprocessed-keys">Handling Unprocessed Keys</h2>
+<p>A <code>BatchGetItem</code> request can partially succeed. If
+throughput capacity is exceeded or if the response reaches the 16 MB
+threshold, DynamoDB returns a 200 OK response containing both:</p>
+<ol type="1">
+<li><strong><code>Responses</code>:</strong> The items successfully
+fetched.</li>
+<li><strong><code>UnprocessedKeys</code>:</strong> The list of keys that
+were not retrieved.</li>
+</ol>
+<p>Applications must inspect the <code>UnprocessedKeys</code> field in
+the response. If this field is not empty, the remaining keys should be
+submitted in a subsequent <code>BatchGetItem</code> call, typically
+using an exponential backoff algorithm to prevent throttling.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-batch-get-item-get-multiple-items-by-key';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

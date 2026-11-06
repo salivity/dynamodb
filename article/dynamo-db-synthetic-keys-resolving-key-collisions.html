@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Synthetic Keys: Resolving Key Collisions - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, primary key collisions occur when distinct data items share the same primary key, causing accidental overwrites during write operations. Synthetic keys—custom, composite strings formed by concatenating multiple attributes—resolve this">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-synthetic-keys-resolving-key-collisions">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Synthetic Keys: Resolving Key Collisions - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-synthetic-keys-resolving-key-collisions" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, primary key collisions occur when distinct data items share the same primary key, causing accidental overwrites during write operations. Synthetic keys—custom, composite strings formed by concatenating multiple attributes—resolve this" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-synthetic-keys-resolving-key-collisions">DynamoDB
+Synthetic Keys: Resolving Key Collisions</h1>
+<p>In Amazon DynamoDB, primary key collisions occur when distinct data
+items share the same primary key, causing accidental overwrites during
+write operations. Synthetic keys—custom, composite strings formed by
+concatenating multiple attributes—resolve this issue by creating unique
+identifiers out of otherwise conflicting data points. This article
+explains the mechanics of key collisions in DynamoDB, demonstrates how
+to construct synthetic keys to prevent data loss, and outlines best
+practices for implementing them to maintain balanced partition
+throughput.</p>
+<h3 id="understanding-key-collisions-in-dynamodb">Understanding Key
+Collisions in DynamoDB</h3>
+<p>DynamoDB uses the primary key—either a simple partition key (PK) or a
+composite partition key and sort key (PK + SK)—to uniquely locate items
+within a table. By default, standard write operations like
+<code>PutItem</code> act as an upsert: if an incoming item has the exact
+same key as an existing record, the existing record is overwritten
+silently without raising an error.</p>
+<p>Collisions typically arise when developers use real-world business
+attributes as primary keys that are not strictly unique on their own.
+For example:</p>
+<ul>
+<li>In multi-tenant architectures, two different organizations might
+register a user with the identical username or email address.</li>
+<li>In event tracking, multiple sensors or services might log an action
+at the exact same millisecond timestamp.</li>
+<li>In order systems, an order ID might be reused across different
+regions or sales channels.</li>
+</ul>
+<h3 id="how-synthetic-keys-eliminate-collisions">How Synthetic Keys
+Eliminate Collisions</h3>
+<p>A synthetic key resolves collisions by assembling a single primary
+key from two or more distinct attributes, ensuring that every record is
+globally unique. Instead of relying on an arbitrary auto-incrementing
+integer or risking data loss with a single non-unique attribute, you
+programmatically merge domain attributes into a deterministic
+string.</p>
+<h4 id="1-concatenating-multi-tenant-attributes">1. Concatenating
+Multi-Tenant Attributes</h4>
+<p>To prevent cross-tenant overwrites, combine the tenant identifier
+with the entity identifier.</p>
+<ul>
+<li><strong>Collision Scenario:</strong> Two tenants both have a user
+with ID <code>1042</code>. Using <code>UserID</code> as the partition
+key causes one tenant to overwrite the other.</li>
+<li><strong>Synthetic Resolution:</strong> Define the partition key as
+<code>tenant_id#user_id</code>. The keys become
+<code>TENANT_A#1042</code> and <code>TENANT_B#1042</code>, ensuring both
+records coexist safely.</li>
+</ul>
+<h4 id="2-appending-high-cardinality-suffixes">2. Appending
+High-Cardinality Suffixes</h4>
+<p>When identical events occur concurrently, combining standard
+attributes might still not guarantee uniqueness. In this case, appending
+a high-cardinality element—such as a Version 4 UUID or a monotonically
+increasing sequence counter—guarantees partition or sort key
+distinctness.</p>
+<ul>
+<li><strong>Collision Scenario:</strong> An IoT device logs multiple
+diagnostic events with identical timestamps.</li>
+<li><strong>Synthetic Resolution:</strong> Construct a sort key such as
+<code>TIMESTAMP#UUID</code> (e.g.,
+<code>2023-10-25T14:30:00Z#8f3a9e2c</code>). This preserves time-series
+order while ensuring no two payloads overwrite each other.</li>
+</ul>
+<h4 id="3-creating-hierarchical-composite-sort-keys">3. Creating
+Hierarchical Composite Sort Keys</h4>
+<p>Synthetic keys are especially powerful when applied to the sort key
+in composite primary keys. By joining related attributes using a
+standardized delimiter (such as <code>#</code> or <code>/</code>), you
+resolve collisions while enabling granular prefix queries using the
+<code>begins_with</code> condition.</p>
+<ul>
+<li><strong>Pattern:</strong> <code>COUNTRY#STATE#CITY</code></li>
+<li><strong>Example Value:</strong> <code>USA#TX#AUSTIN</code></li>
+</ul>
+<p>This strategy prevents conflicts between cities sharing names in
+different regions while allowing you to query all cities in a state or
+country without scanning the table.</p>
+<h3 id="best-practices-for-designing-synthetic-keys">Best Practices for
+Designing Synthetic Keys</h3>
+<ul>
+<li><strong>Use Consistent Delimiters:</strong> Standardize on a
+delimiter that is unlikely to appear in the raw attribute values, such
+as <code>#</code>, <code>|</code>, or <code>$</code>. If the underlying
+data might contain the delimiter, sanitize or encode the inputs before
+concatenation.</li>
+<li><strong>Plan for Downstream Parsing:</strong> While DynamoDB treats
+synthetic keys as opaque strings, client applications often parse these
+keys to retrieve original attribute values. Keep the format rigid and
+predictable to simplify deserialization.</li>
+<li><strong>Balance Write Distribution:</strong> Synthetic keys
+naturally help mitigate "hot partitions." Concatenating attributes
+increases the cardinality of your partition keys, spreading I/O
+operations evenly across DynamoDB’s underlying physical storage
+partitions.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-synthetic-keys-resolving-key-collisions';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

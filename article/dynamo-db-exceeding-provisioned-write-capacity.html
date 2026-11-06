@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Exceeding Provisioned Write Capacity - dynamodb</title>
+    <meta name="description" content="When a write operation in Amazon DynamoDB exceeds the provisioned throughput limits for a table or index, DynamoDB actively throttles the request to protect system stability and resource availability. This event triggers an immediate ProvisionedThroughput">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-exceeding-provisioned-write-capacity">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Exceeding Provisioned Write Capacity - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-exceeding-provisioned-write-capacity" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When a write operation in Amazon DynamoDB exceeds the provisioned throughput limits for a table or index, DynamoDB actively throttles the request to protect system stability and resource availability. This event triggers an immediate ProvisionedThroughput" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-exceeding-provisioned-write-capacity">DynamoDB
+Exceeding Provisioned Write Capacity</h1>
+<p>When a write operation in Amazon DynamoDB exceeds the provisioned
+throughput limits for a table or index, DynamoDB actively throttles the
+request to protect system stability and resource availability. This
+event triggers an immediate
+<code>ProvisionedThroughputExceededException</code> error, prompting
+standard AWS software development kits (SDKs) to initiate automatic
+retries via exponential backoff. This guide breaks down the immediate
+mechanics of throughput throttling, the behavior of burst capacity, the
+impact on secondary indexes, and the primary strategies used to handle
+and prevent these bottlenecks.</p>
+<h3 id="the-immediate-system-response-throttling">The Immediate System
+Response: Throttling</h3>
+<p>DynamoDB allocates resources based on provisioned Write Capacity
+Units (WCUs). One WCU provides up to one write per second for an item up
+to 1 KB in size. When the rate of incoming write requests exceeds this
+allocated limit, DynamoDB rejects the excess requests with an HTTP 400
+bad request error code alongside a
+<code>ProvisionedThroughputExceededException</code>.</p>
+<p>Once this occurs:</p>
+<ul>
+<li>The write operation is not executed or queued automatically by the
+database engine.</li>
+<li>The consumed write request does not modify the table data.</li>
+<li>Amazon CloudWatch records the throttled event under the
+<code>ThrottledRequests</code> and <code>WriteThrottleEvents</code>
+metrics.</li>
+</ul>
+<h3 id="burst-capacity-and-its-limits">Burst Capacity and Its
+Limits</h3>
+<p>DynamoDB provides temporary resilience against sudden spikes using
+burst capacity. If a table does not utilize its full provisioned
+throughput, DynamoDB banks the unused capacity for up to 300 seconds (5
+minutes).</p>
+<p>If a sudden burst of writes exceeds your provisioned rate, DynamoDB
+will automatically consume this banked capacity to complete the writes
+without throwing an error. However, burst capacity is not guaranteed,
+and sustained writes that exceed provisioned limits will quickly deplete
+the reserve, resulting in immediate throttling once exhausted.</p>
+<h3 id="automatic-retries-and-exponential-backoff">Automatic Retries and
+Exponential Backoff</h3>
+<p>Most applications interact with DynamoDB through official AWS SDKs.
+When an SDK receives a
+<code>ProvisionedThroughputExceededException</code>, it handles the
+error automatically without immediate application-level failure:</p>
+<ol type="1">
+<li><strong>Wait and Retry:</strong> The SDK pauses for a short duration
+and retries the failed write request.</li>
+<li><strong>Exponential Backoff:</strong> If subsequent attempts also
+fail, the SDK progressively increases the wait time between each retry
+attempt.</li>
+<li><strong>Jitter:</strong> The SDK introduces randomized delays
+("jitter") to prevent multiple simultaneous requests from hitting
+DynamoDB at the exact same millisecond.</li>
+</ol>
+<p>If the sustained load is too high and the SDK exhausts its maximum
+retry attempts, the exception is passed up to your application code. At
+this stage, your application must handle the failure explicitly, or the
+write data will be lost.</p>
+<h3 id="hot-partitions-and-non-uniform-access">Hot Partitions and
+Non-Uniform Access</h3>
+<p>A table may experience throttling even if its total consumed WCUs
+appear to be well below the total provisioned limit. DynamoDB divides
+table data across multiple physical partitions, distributing the total
+provisioned throughput equally among them.</p>
+<p>If your application directs a disproportionate number of writes to a
+single partition key—a scenario known as a "hot partition"—that specific
+partition will exhaust its allocated share of WCUs. The operations
+hitting that specific partition will be throttled, regardless of how
+much idle capacity remains across the rest of the table.</p>
+<h3 id="impact-on-global-secondary-indexes-gsis">Impact on Global
+Secondary Indexes (GSIs)</h3>
+<p>If a base table has one or more Global Secondary Indexes (GSIs),
+write operations to the base table also generate corresponding writes to
+those indexes.</p>
+<p>If a GSI lacks sufficient provisioned write capacity to accommodate
+the updates, writes to the base table will be throttled, even if the
+base table itself has ample write capacity available. DynamoDB throttles
+the base table write to ensure that secondary indexes do not fall
+indefinitely behind the primary data set.</p>
+<h3 id="how-to-prevent-and-resolve-write-throttling">How to Prevent and
+Resolve Write Throttling</h3>
+<p>To prevent write operations from exceeding capacity limits, several
+architectural patterns and configuration options are standard:</p>
+<ul>
+<li><strong>Enable DynamoDB Auto Scaling:</strong> Set minimum and
+maximum capacity thresholds alongside a target utilization percentage.
+Auto Scaling monitors CloudWatch metrics and dynamically adjusts
+provisioned WCUs up or down as traffic patterns shift.</li>
+<li><strong>Switch to On-Demand Capacity Mode:</strong> For workloads
+with unpredictable, spiky, or unknown traffic patterns, On-Demand mode
+eliminates manual capacity planning by instantly accommodating workloads
+up to double the previous peak traffic without throttling.</li>
+<li><strong>Improve Partition Key Cardinality:</strong> Distribute
+writes evenly by choosing high-cardinality partition keys. If a natural
+key creates a hot partition, append random or calculated suffixes (write
+sharding) to spread the writes across multiple partitions.</li>
+<li><strong>Buffer with Queues:</strong> Place a message queue, such as
+Amazon SQS, directly in front of the DynamoDB write layer. The queue
+acts as a shock absorber during traffic spikes, allowing worker
+processes to ingest items and write to DynamoDB at a steady, controlled
+rate that stays within provisioned limits.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-exceeding-provisioned-write-capacity';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

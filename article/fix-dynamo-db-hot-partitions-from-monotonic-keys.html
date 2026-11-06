@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix DynamoDB Hot Partitions from Monotonic Keys - dynamodb</title>
+    <meta name="description" content="Monotonically increasing sort keys often cause severe write throttling and hot partition issues in Amazon DynamoDB when paired with static or low-cardinality partition keys. This article explores the root cause of this performance bottleneck and details t">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/fix-dynamo-db-hot-partitions-from-monotonic-keys">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fix DynamoDB Hot Partitions from Monotonic Keys - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/fix-dynamo-db-hot-partitions-from-monotonic-keys" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Monotonically increasing sort keys often cause severe write throttling and hot partition issues in Amazon DynamoDB when paired with static or low-cardinality partition keys. This article explores the root cause of this performance bottleneck and details t" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="fix-dynamodb-hot-partitions-from-monotonic-keys">Fix DynamoDB
+Hot Partitions from Monotonic Keys</h1>
+<p>Monotonically increasing sort keys often cause severe write
+throttling and hot partition issues in Amazon DynamoDB when paired with
+static or low-cardinality partition keys. This article explores the root
+cause of this performance bottleneck and details the primary mitigation
+strategy: partition key write sharding (salting). By introducing
+randomized or calculated suffixes to your partition keys, you can evenly
+distribute write workloads across physical partitions while maintaining
+predictable query performance.</p>
+<h3 id="understanding-the-bottleneck">Understanding the Bottleneck</h3>
+<p>In DynamoDB, each physical partition has a hard throughput limit of
+1,000 Write Capacity Units (WCUs) and 3,000 Read Capacity Units (RCUs).
+When an application writes sequential or time-series data using
+monotonically increasing sort keys (such as auto-incrementing IDs or
+current timestamps) against a single partition key, every write request
+hits the same physical partition.</p>
+<p>Even if your overall table has provisioned thousands of WCUs, any
+workload exceeding 1,000 WCUs on that single partition key results in
+<code>ProvisionedThroughputExceededException</code> errors.</p>
+<h3 id="the-primary-solution-partition-key-sharding-salting">The Primary
+Solution: Partition Key Sharding (Salting)</h3>
+<p>The most effective strategy to resolve this issue is <strong>write
+sharding</strong>, also known as <strong>key salting</strong>. Instead
+of writing all monotonically increasing sort keys to a single partition
+key, you append a suffix (a "salt") to the partition key value to
+distribute the writes across multiple logical partitions.</p>
+<h4 id="1-randomized-sharding">1. Randomized Sharding</h4>
+<p>Randomized sharding works best for write-heavy workloads where items
+do not need to be queried together by exact key values immediately.</p>
+<ul>
+<li><strong>Implementation:</strong> Select a range of numbers (e.g., 1
+to <span class="math inline">\(N\)</span>) and append a randomly chosen
+number to the partition key:
+<code>PartitionKey = "Order_" + random(1, N)</code>.</li>
+<li><strong>Result:</strong> Writes are distributed evenly across <span
+class="math inline">\(N\)</span> distinct partitions, multiplying your
+write throughput limit by <span class="math inline">\(N\)</span> (up to
+the physical limit of the table).</li>
+<li><strong>Query Trade-off:</strong> To fetch all records for a given
+logical entity, your application must perform parallel scatter-gather
+queries across all <span class="math inline">\(N\)</span> partition keys
+and aggregate the results.</li>
+</ul>
+<h4 id="2-deterministic-calculated-sharding">2. Deterministic
+(Calculated) Sharding</h4>
+<p>Deterministic sharding calculates the suffix based on an attribute
+value within the item, such as a user ID, hash, or rounded time
+block.</p>
+<ul>
+<li><strong>Implementation:</strong> Compute a hash or modulus of a
+secondary attribute to determine the shard:
+<code>PartitionKey = "SensorData_" + (deviceID % N)</code>.</li>
+<li><strong>Result:</strong> All writes for a specific device or
+sub-group route to a predictable partition while spreading the total
+device population across <span class="math inline">\(N\)</span>
+partitions.</li>
+<li><strong>Query Advantage:</strong> Reads for a specific sub-group
+require querying only a single partition key, avoiding scatter-gather
+operations while still eliminating single-partition write hotspots.</li>
+</ul>
+<h3 id="time-bucketed-partition-keys">Time-Bucketed Partition Keys</h3>
+<p>If the monotonically increasing sort key represents time (e.g., an
+ISO-8601 timestamp), combining write sharding with time-bucketing is
+optimal. Define partition keys that roll over by hour, day, or week
+alongside the shard number:</p>
+<p><code>PartitionKey = "Logs_2023-10-27_shard" + random(1, 10)</code></p>
+<p>This prevents historical data from accumulating on the same active
+partition while allowing write workloads to span across the shards of
+the current time window.</p>
+<h3 id="best-practices-for-implementation">Best Practices for
+Implementation</h3>
+<ul>
+<li><strong>Choose the Smallest Viable Shard Count (<span
+class="math inline">\(N\)</span>):</strong> Start with an <span
+class="math inline">\(N\)</span> value calculated as
+<code>Peak Required WCUs / 1,000</code>. Over-sharding increases read
+latency and scatter-gather costs.</li>
+<li><strong>Handle Global Secondary Indexes (GSIs):</strong> Ensure that
+secondary indexes do not replicate the monotonic hot key pattern. GSIs
+have their own 1,000 WCU per-partition limit and can throttle the main
+table if writes are concentrated.</li>
+<li><strong>Leverage Scatter-Gather Reads Concurrently:</strong> When
+querying across salted keys, use asynchronous or parallel threads to
+query all partitions simultaneously rather than sequentially to maintain
+low read latency.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/fix-dynamo-db-hot-partitions-from-monotonic-keys';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

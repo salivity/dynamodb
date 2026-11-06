@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Target Utilization in DynamoDB Auto Scaling - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB auto scaling dynamically adjusts provisioned read and write throughput in response to real-time traffic patterns. At the core of this mechanism is the target utilization percentage, a configuration setting that defines the ratio of consume">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/target-utilization-in-dynamo-db-auto-scaling">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Target Utilization in DynamoDB Auto Scaling - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/target-utilization-in-dynamo-db-auto-scaling" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB auto scaling dynamically adjusts provisioned read and write throughput in response to real-time traffic patterns. At the core of this mechanism is the target utilization percentage, a configuration setting that defines the ratio of consume" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="target-utilization-in-dynamodb-auto-scaling">Target Utilization
+in DynamoDB Auto Scaling</h1>
+<p>Amazon DynamoDB auto scaling dynamically adjusts provisioned read and
+write throughput in response to real-time traffic patterns. At the core
+of this mechanism is the target utilization percentage, a configuration
+setting that defines the ratio of consumed capacity units to provisioned
+capacity units that AWS Application Auto Scaling actively works to
+maintain. Understanding this metric is essential for balancing
+application responsiveness with infrastructure costs, ensuring that
+DynamoDB tables scale efficiently without unnecessary throttling or
+over-provisioning.</p>
+<h3 id="the-core-function-of-target-utilization">The Core Function of
+Target Utilization</h3>
+<p>Target utilization is expressed as a percentage calculated using the
+formula:</p>
+<p><span class="math display">\[\text{Utilization} = \left(
+\frac{\text{Consumed Capacity Units}}{\text{Provisioned Capacity Units}}
+\right) \times 100\]</span></p>
+<p>When you set a target utilization percentage (for example, 70%), you
+are instructing the auto scaling policy to keep actual consumption as
+close to that percentage as possible. The policy operates as a
+closed-loop control system:</p>
+<ul>
+<li><strong>Scaling Up:</strong> When application traffic increases and
+consumed capacity exceeds the target utilization threshold for a
+sustained period, DynamoDB scales up the provisioned capacity. This
+increases the total throughput limit, lowering the utilization ratio
+back to the target.</li>
+<li><strong>Scaling Down:</strong> When incoming traffic decreases and
+consumed capacity falls below the target percentage, auto scaling
+reduces the provisioned capacity. This lowers costs while elevating the
+utilization ratio back toward the configured target.</li>
+</ul>
+<h3 id="headroom-vs-cost-efficiency">Headroom vs. Cost Efficiency</h3>
+<p>The primary role of the target utilization percentage is serving as a
+buffer—or headroom—for unexpected traffic spikes. Because auto scaling
+in DynamoDB is not instantaneous and typically relies on CloudWatch
+metrics evaluated over a span of consecutive minutes, it cannot react to
+sudden microsecond or second-level spikes.</p>
+<ul>
+<li><strong>Lower Target Utilization (e.g., 50%):</strong> Provides a
+large 50% safety margin. If traffic suddenly doubles, the table can
+absorb the surge without throttling while auto scaling begins
+provisioning additional capacity. The trade-off is higher cost, as you
+consistently pay for provisioned capacity that sits idle under
+steady-state conditions.</li>
+<li><strong>Higher Target Utilization (e.g., 85% to 90%):</strong>
+Maximizes cost efficiency by minimizing idle capacity. However, it
+leaves only a 10% to 15% buffer for sudden traffic increases. A sharp,
+unexpected surge can quickly exceed the provisioned capacity, exhaust
+DynamoDB's temporary burst capacity, and result in
+<code>ProvisionedThroughputExceededException</code> errors.</li>
+</ul>
+<h3 id="interaction-with-burst-capacity">Interaction with Burst
+Capacity</h3>
+<p>DynamoDB provides built-in burst capacity by retaining unused
+capacity for up to 300 seconds. Target utilization dictates how
+frequently your workload relies on this burst reserve. A higher target
+utilization percentage burns through burst capacity faster during a
+ramp-up event, whereas a moderate target utilization ensures burst
+capacity is rarely depleted before auto scaling triggers and completes a
+scale-up event.</p>
+<h3 id="choosing-the-optimal-target-percentage">Choosing the Optimal
+Target Percentage</h3>
+<p>AWS sets the default target utilization to 70%, which represents a
+practical baseline for most predictable workloads.</p>
+<ul>
+<li><strong>Set to 70%</strong> for applications with gradual traffic
+curves, such as diurnal usage patterns, where auto scaling has
+sufficient time to track changes.</li>
+<li><strong>Set between 50% and 60%</strong> for latency-sensitive
+applications or workloads subject to aggressive, unpredicted
+spikes.</li>
+<li><strong>Set above 75%</strong> only for background batch processing
+or non-critical asynchronous jobs where occasional throttling can be
+handled gracefully by client retries with exponential backoff.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/target-utilization-in-dynamo-db-auto-scaling';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

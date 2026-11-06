@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Scan Limit Affects Evaluated Items - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, the Limit parameter on a Scan operation restricts the maximum number of items the database evaluates before applying any filter expressions, rather than dictating the number of matching items returned to the client. This article explai">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-scan-limit-affects-evaluated-items">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Scan Limit Affects Evaluated Items - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-scan-limit-affects-evaluated-items" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, the Limit parameter on a Scan operation restricts the maximum number of items the database evaluates before applying any filter expressions, rather than dictating the number of matching items returned to the client. This article explai" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-scan-limit-affects-evaluated-items">How DynamoDB
+Scan Limit Affects Evaluated Items</h1>
+<p>In Amazon DynamoDB, the <code>Limit</code> parameter on a
+<code>Scan</code> operation restricts the maximum number of items the
+database evaluates <em>before</em> applying any filter expressions,
+rather than dictating the number of matching items returned to the
+client. This article explains how the <code>Limit</code> parameter
+functions during a scan, why returned results may be fewer than the
+configured limit, and how it directly impacts read throughput and
+pagination.</p>
+<h2 id="the-evaluation-process">The Evaluation Process</h2>
+<p>When you execute a <code>Scan</code> in DynamoDB, the request
+processes items sequentially through the following pipeline:</p>
+<ol type="1">
+<li><strong>Read Items:</strong> DynamoDB reads items sequentially from
+the table up to the number specified by the <code>Limit</code> parameter
+(or up to the 1 MB data size limit, whichever comes first).</li>
+<li><strong>Apply FilterExpression:</strong> If a
+<code>FilterExpression</code> is defined, DynamoDB evaluates the read
+items against this condition. Items that do not meet the criteria are
+discarded.</li>
+<li><strong>Return Results:</strong> DynamoDB returns the remaining
+matching items to the client, along with metadata about the
+operation.</li>
+</ol>
+<p>Because DynamoDB applies the <code>Limit</code> in step 1, the
+parameter controls how many items are <em>examined</em> (evaluated), not
+how many matching items are returned.</p>
+<h2 id="scannedcount-vs-count">ScannedCount vs. Count</h2>
+<p>The response of a <code>Scan</code> operation includes two distinct
+metrics that illustrate this behavior:</p>
+<ul>
+<li><strong>ScannedCount:</strong> The total number of items DynamoDB
+evaluated. When a <code>Limit</code> is supplied,
+<code>ScannedCount</code> will be less than or equal to that
+<code>Limit</code>.</li>
+<li><strong>Count:</strong> The number of items that satisfied the
+<code>FilterExpression</code> and are present in the final result
+payload.</li>
+</ul>
+<p>If you set <code>Limit = 50</code> on a table scan with a
+<code>FilterExpression</code>, DynamoDB reads exactly 50 items. If only
+5 of those 50 items match your filter criteria,
+<code>ScannedCount</code> will be 50, but <code>Count</code> will be 5.
+In cases where none of the evaluated items match the filter, DynamoDB
+returns an empty list (<code>Count = 0</code>), even though it evaluated
+50 items.</p>
+<h2 id="pagination-with-lastevaluatedkey">Pagination with
+LastEvaluatedKey</h2>
+<p>If DynamoDB reaches the <code>Limit</code> value before scanning the
+entire table or reaching the end of the dataset, it stops the operation
+and returns a <code>LastEvaluatedKey</code>.</p>
+<p>To retrieve the next batch of items, your application must issue
+another <code>Scan</code> request passing this key into the
+<code>ExclusiveStartKey</code> parameter. This pagination continues
+sequentially until DynamoDB no longer returns a
+<code>LastEvaluatedKey</code>, indicating the entire dataset has been
+traversed.</p>
+<h2 id="cost-and-capacity-consumption">Cost and Capacity
+Consumption</h2>
+<p>DynamoDB calculates consumed Read Capacity Units (RCUs) based on the
+total size of all evaluated items (<code>ScannedCount</code>), not the
+size of the filtered results (<code>Count</code>). Restricting the scan
+with a <code>Limit</code> parameter helps prevent unexpected capacity
+spikes by bounding the amount of data processed in a single API call,
+but filtered-out items still consume read throughput.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-scan-limit-affects-evaluated-items';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

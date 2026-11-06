@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Best DynamoDB API to Delete Historical Data - dynamodb</title>
+    <meta name="description" content="Managing historical records in Amazon DynamoDB requires a deliberate deletion strategy because the service does not offer a bulk &quot;delete where&quot; operation. This article examines the best DynamoDB mechanisms and API operations for purging large volumes of h">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/best-dynamo-db-api-to-delete-historical-data">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Best DynamoDB API to Delete Historical Data - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/best-dynamo-db-api-to-delete-historical-data" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Managing historical records in Amazon DynamoDB requires a deliberate deletion strategy because the service does not offer a bulk &quot;delete where&quot; operation. This article examines the best DynamoDB mechanisms and API operations for purging large volumes of h" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="best-dynamodb-api-to-delete-historical-data">Best DynamoDB API
+to Delete Historical Data</h1>
+<p>Managing historical records in Amazon DynamoDB requires a deliberate
+deletion strategy because the service does not offer a bulk "delete
+where" operation. This article examines the best DynamoDB mechanisms and
+API operations for purging large volumes of historical data, contrasting
+the zero-cost Time to Live (TTL) feature enabled via the
+<code>UpdateTimeToLive</code> API with operational alternatives such as
+<code>BatchWriteItem</code> and <code>DeleteTable</code>.</p>
+<h2
+id="the-best-native-method-time-to-live-ttl-via-updatetimetolive">The
+Best Native Method: Time to Live (TTL) via
+<code>UpdateTimeToLive</code></h2>
+<p>For the majority of historical data workloads, the recommended
+approach is DynamoDB Time to Live (TTL), configured using the
+<code>UpdateTimeToLive</code> API operation.</p>
+<p>TTL allows you to define a timestamp attribute on your items
+indicating when they should expire. Once the current epoch time exceeds
+this timestamp, DynamoDB automatically identifies and removes the
+expired items in the background.</p>
+<ul>
+<li><strong>Zero WCU Consumption:</strong> TTL deletions do not consume
+Write Capacity Units (WCUs), nor do they impact provisioned or on-demand
+throughput.</li>
+<li><strong>Fully Managed:</strong> Once enabled via the API, the
+deletion lifecycle requires no continuous maintenance, custom script
+execution, or server infrastructure.</li>
+<li><strong>Latency Consideration:</strong> TTL operates as a background
+process. While items are marked expired immediately, physical deletion
+typically takes place within 48 hours of expiration. If your application
+logic can filter out expired timestamps during queries, this background
+latency is rarely an issue.</li>
+</ul>
+<h2 id="immediate-programmatic-deletion-batchwriteitem">Immediate
+Programmatic Deletion: <code>BatchWriteItem</code></h2>
+<p>When historical data must be purged immediately and cannot wait for
+the TTL deletion window, the best API operation for deleting items
+programmatically is <code>BatchWriteItem</code>.</p>
+<p>The <code>BatchWriteItem</code> API allows you to bundle up to 25
+delete requests into a single network call. Because DynamoDB cannot
+delete records based on non-key attributes, the process requires two
+steps:</p>
+<ol type="1">
+<li><strong>Retrieve Keys:</strong> Execute a <code>Scan</code> or
+<code>Query</code> to fetch the partition and sort keys of the expired
+records.</li>
+<li><strong>Execute Deletions:</strong> Pass the retrieved keys in
+batches of 25 to <code>BatchWriteItem</code>.</li>
+</ol>
+<p>While <code>BatchWriteItem</code> is faster than invoking individual
+<code>DeleteItem</code> operations, it consumes standard WCUs for every
+deleted item. For massive historical datasets, running large batches can
+exhaust capacity, trigger throttling, and lead to significant
+operational costs.</p>
+<h2
+id="architectural-alternative-deletetable-for-time-series-data">Architectural
+Alternative: <code>DeleteTable</code> for Time-Series Data</h2>
+<p>For workloads with strict retention cutoffs and multi-terabyte data
+sizes, the most efficient API operation is <code>DeleteTable</code>,
+paired with a time-series table design.</p>
+<p>Instead of storing all historical data in a single table, you
+partition data into distinct tables based on time intervals (such as
+daily, weekly, or monthly tables, e.g., <code>logs_2024_01</code>).</p>
+<ul>
+<li><strong>Instant Purging:</strong> Calling the
+<code>DeleteTable</code> API removes the entire table and all its
+historical contents instantly.</li>
+<li><strong>Cost Efficiency:</strong> Deleting a table consumes zero
+write capacity and incurs no scanning or key-retrieval overhead.</li>
+<li><strong>Simplicity:</strong> It eliminates the need to manage
+deletion loops or monitor background TTL queues.</li>
+</ul>
+<h2 id="selecting-the-right-approach">Selecting the Right Approach</h2>
+<ul>
+<li>Use <strong><code>UpdateTimeToLive</code> (TTL)</strong> if the data
+can tolerate up to 48 hours of background deletion latency and you want
+to avoid write capacity costs.</li>
+<li>Use <strong><code>DeleteTable</code></strong> if your architecture
+supports time-series tables and you require immediate, zero-cost data
+removal.</li>
+<li>Use <strong><code>BatchWriteItem</code></strong> only when you need
+immediate, deterministic deletion of specific historical records from an
+active, persistent table.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/best-dynamo-db-api-to-delete-historical-data';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

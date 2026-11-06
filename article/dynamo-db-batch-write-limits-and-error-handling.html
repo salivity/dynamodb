@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Batch Write Limits and Error Handling - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB processes bulk operations using the BatchWriteItem API, but the outcome of a batch request depends entirely on the type of limit an individual write exceeds. When individual writes violate hard validation constraints—such as the maximum it">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-batch-write-limits-and-error-handling">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Batch Write Limits and Error Handling - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-batch-write-limits-and-error-handling" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB processes bulk operations using the BatchWriteItem API, but the outcome of a batch request depends entirely on the type of limit an individual write exceeds. When individual writes violate hard validation constraints—such as the maximum it" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-batch-write-limits-and-error-handling">DynamoDB Batch
+Write Limits and Error Handling</h1>
+<p>Amazon DynamoDB processes bulk operations using the
+<code>BatchWriteItem</code> API, but the outcome of a batch request
+depends entirely on the type of limit an individual write exceeds. When
+individual writes violate hard validation constraints—such as the
+maximum item size limit—DynamoDB rejects the entire batch immediately
+without processing any items. Conversely, if an individual write fails
+due to transient or capacity-related thresholds, such as provisioned
+throughput limits, DynamoDB processes the valid items and isolates the
+throttled writes into a response payload for subsequent retries.</p>
+<h3 id="hard-limit-violations-total-batch-rejection">Hard Limit
+Violations: Total Batch Rejection</h3>
+<p>DynamoDB enforces strict operational boundaries on every individual
+write operation inside a <code>BatchWriteItem</code> call. The most
+prominent constraint is the individual item size limit, which cannot
+exceed 400 KB (including attribute names and values).</p>
+<p>When an individual item within a batch exceeds this 400 KB limit,
+DynamoDB does not partially execute the batch. Instead, the service
+fails the request at the validation stage:</p>
+<ul>
+<li><strong>Exception Type:</strong> The API immediately returns a
+client error: <code>ValidationException</code>.</li>
+<li><strong>Atomicity of Validation:</strong> Pre-execution validation
+applies to the entire HTTP payload. If even one item out of a 25-item
+batch violates schema requirements, key definitions, or size limits,
+zero items are written to the table.</li>
+<li><strong>HTTP Status Code:</strong> A <code>400 Bad Request</code> is
+returned to the client.</li>
+</ul>
+<p>The same complete failure occurs if the collective size of all
+operations in the batch exceeds the 16 MB payload limit, or if the
+request contains more than 25 individual <code>PutItem</code> or
+<code>DeleteItem</code> actions.</p>
+<h3
+id="dynamic-limit-violations-partial-processing-via-unprocesseditems">Dynamic
+Limit Violations: Partial Processing via UnprocessedItems</h3>
+<p>A different mechanism governs situations where individual writes
+exceed operational or infrastructure capacity rather than static size
+limits. This happens when individual partition throughput is saturated
+or table-level Write Capacity Units (WCUs) are exhausted:</p>
+<ol type="1">
+<li><strong>Partial Success:</strong> DynamoDB processes as many
+individual items in the batch as capacity allows.</li>
+<li><strong>Identification of Failures:</strong> Items that exceed
+provisioned throughput or encounter high partition contention are not
+discarded. Instead, DynamoDB leaves them unprocessed.</li>
+<li><strong>The <code>UnprocessedItems</code> Response:</strong> The
+response payload returns an HTTP 200 OK along with an
+<code>UnprocessedItems</code> map containing the exact operations that
+could not be completed.</li>
+<li><strong>No Aggregate Failure:</strong> The overall call does not
+throw a <code>ProvisionedThroughputExceededException</code> unless every
+single item in the batch failed to process.</li>
+</ol>
+<h3 id="recommended-handling-strategy">Recommended Handling
+Strategy</h3>
+<p>To successfully manage batches containing operations that risk
+exceeding individual thresholds:</p>
+<ul>
+<li><strong>Client-Side Validation:</strong> Calculate item byte sizes
+before calling <code>BatchWriteItem</code>. If any item exceeds 400 KB,
+compress the payload, split the data across related records, or store
+the object in Amazon S3 and store only the metadata reference in
+DynamoDB.</li>
+<li><strong>Exponential Backoff:</strong> When handling dynamic
+throughput rejections, inspect the <code>UnprocessedItems</code> field
+in the response. Resubmit only those specific items in a subsequent
+request using an exponential backoff algorithm with jitter to prevent
+persistent partition throttling.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-batch-write-limits-and-error-handling';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

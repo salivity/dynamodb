@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Short Attribute Names Save Costs - dynamodb</title>
+    <meta name="description" content="Using short attribute names in Amazon DynamoDB directly reduces operational expenses by decreasing the physical byte size of stored items. Because DynamoDB is a schemaless NoSQL database that stores the attribute name alongside the value for every item, l">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-short-attribute-names-save-costs">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Short Attribute Names Save Costs - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-short-attribute-names-save-costs" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Using short attribute names in Amazon DynamoDB directly reduces operational expenses by decreasing the physical byte size of stored items. Because DynamoDB is a schemaless NoSQL database that stores the attribute name alongside the value for every item, l" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-short-attribute-names-save-costs">How DynamoDB
+Short Attribute Names Save Costs</h1>
+<p>Using short attribute names in Amazon DynamoDB directly reduces
+operational expenses by decreasing the physical byte size of stored
+items. Because DynamoDB is a schemaless NoSQL database that stores the
+attribute name alongside the value for every item, long names consume
+extra data. By shortening these names, applications use fewer bytes per
+record, which lowers continuous storage fees and minimizes the Read
+Capacity Units (RCUs) and Write Capacity Units (WCUs) required to
+process requests.</p>
+<h3 id="the-schemaless-storage-model">The Schemaless Storage Model</h3>
+<p>Unlike traditional relational database management systems (RDBMS)
+where column names are defined once in a table schema, DynamoDB stores
+the name of each attribute alongside its value within every single
+record. For instance, if an item contains the attribute
+<code>customerIdentificationNumber</code>, those 28 characters are
+stored as 28 bytes of UTF-8 data for that specific item. If the table
+holds 100 million items, storing that single attribute name alone
+consumes 2.8 gigabytes of storage, independent of the actual data values
+stored.</p>
+<p>Shortening that key to <code>cid</code> reduces the footprint to 3
+bytes per record, cutting the attribute name storage by nearly 90%.</p>
+<h3 id="lowering-base-storage-costs">Lowering Base Storage Costs</h3>
+<p>DynamoDB bills data storage based on the raw gigabytes stored per
+month. The total size of an item is calculated as the sum of the lengths
+of all attribute names and attribute values, plus a small per-item
+overhead (typically 100 bytes). When attribute names are condensed
+across wide tables or tables with millions of records, the cumulative
+reduction in megabytes or gigabytes directly lowers the monthly baseline
+storage bill.</p>
+<h3 id="reducing-throughput-costs-rcus-and-wcus">Reducing Throughput
+Costs (RCUs and WCUs)</h3>
+<p>DynamoDB throughput pricing is directly tied to item size, using
+tiered billing increments:</p>
+<ul>
+<li><strong>Write Capacity Units (WCUs):</strong> One WCU covers a
+standard write of up to 1 KB of data per second. If an item is 1,001
+bytes, DynamoDB rounds up and charges 2 WCUs.</li>
+<li><strong>Read Capacity Units (RCUs):</strong> One RCU covers a
+strongly consistent read of up to 4 KB of data per second (or two
+eventually consistent reads). An item measuring 4,001 bytes charges 2
+RCUs instead of 1.</li>
+</ul>
+<p>Because billing increments are strictly based on these 1 KB and 4 KB
+boundaries, unnecessary bytes from verbose attribute names can push
+items into the next billing tier. Truncating attribute names helps keep
+records below these size thresholds, preventing items from incurring
+double the read or write cost.</p>
+<h3 id="secondary-indexes-and-data-transfer">Secondary Indexes and Data
+Transfer</h3>
+<p>The financial benefits of compact attribute names also extend to
+secondary components:</p>
+<ul>
+<li><strong>Global Secondary Indexes (GSIs):</strong> When attributes
+are projected into GSIs, their names are duplicated in the index storage
+and consume additional write capacity on the index itself. Shorter names
+reduce GSI storage and replication costs.</li>
+<li><strong>Network Data Transfer:</strong> Smaller payloads reduce the
+volume of data transferred over the wire between DynamoDB and client
+applications, lowering latency and potential outbound data transfer
+charges.</li>
+</ul>
+<h3 id="best-practice-implementation">Best Practice Implementation</h3>
+<p>To maintain clean and readable application code while benefiting from
+short attribute names, developers use object mappers or serialization
+libraries. Most modern SDKs allow mapping readable code variables (such
+as <code>userEmailAddress</code>) to compact database attributes (such
+as <code>ea</code>) using annotations or decorators. This preserves code
+maintainability while storing the absolute minimum number of bytes in
+DynamoDB.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-short-attribute-names-save-costs';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

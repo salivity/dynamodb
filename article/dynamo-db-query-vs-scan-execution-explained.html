@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Query vs Scan Execution Explained - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides two distinct methods for reading collections of items: the Query operation and the Scan operation. While a Query targets specific items by searching directly against partition and sort key values, a Scan sequentially inspects ever">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-query-vs-scan-execution-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Query vs Scan Execution Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-query-vs-scan-execution-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides two distinct methods for reading collections of items: the Query operation and the Scan operation. While a Query targets specific items by searching directly against partition and sort key values, a Scan sequentially inspects ever" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-query-vs-scan-execution-explained">DynamoDB Query vs
+Scan Execution Explained</h1>
+<p>Amazon DynamoDB provides two distinct methods for reading collections
+of items: the Query operation and the Scan operation. While a Query
+targets specific items by searching directly against partition and sort
+key values, a Scan sequentially inspects every single item across an
+entire table or secondary index. Understanding the execution mechanics
+behind these two operations is essential for designing low-latency
+applications, minimizing consumed Read Capacity Units (RCUs), and
+keeping AWS infrastructure costs predictable.</p>
+<h3 id="how-dynamodb-executes-a-query-operation">How DynamoDB Executes a
+Query Operation</h3>
+<p>A Query operation searches an item collection directly by leveraging
+the table’s primary key schema.</p>
+<ol type="1">
+<li><strong>Partition Targeting:</strong> Every Query requires an
+equality condition on the partition key (<code>PK = value</code>).
+DynamoDB runs the partition key value through an internal hash function
+to identify the exact physical partition storing that data.</li>
+<li><strong>Sort Key Traversal:</strong> If a sort key condition is
+provided (using operators like <code>=</code>, <code>&lt;</code>,
+<code>&gt;</code>, <code>BETWEEN</code>, or <code>begins_with</code>),
+DynamoDB traverses the sorted index structure within that specific
+partition to isolate the matching range.</li>
+<li><strong>Data Retrieval:</strong> DynamoDB reads only the items that
+satisfy the partition and sort key conditions, up to a maximum data
+payload of 1 MB per request.</li>
+<li><strong>Post-Fetch Filtering:</strong> If a
+<code>FilterExpression</code> is applied, DynamoDB evaluates it in
+memory <em>after</em> reading the indexed items from the partition and
+discards non-matching records before returning the payload to the
+client.</li>
+</ol>
+<p>Because DynamoDB routes directly to the relevant partition and reads
+only the requested slice of data, Query operations typically execute
+with single-digit millisecond latency regardless of total table
+size.</p>
+<h3 id="how-dynamodb-executes-a-scan-operation">How DynamoDB Executes a
+Scan Operation</h3>
+<p>A Scan operation reads all data stored in the table without relying
+on specific partition keys.</p>
+<ol type="1">
+<li><strong>Full Partition Iteration:</strong> DynamoDB sequentially
+accesses every physical partition hosting the table or index.</li>
+<li><strong>Page-by-Page Reading:</strong> DynamoDB reads items
+sequentially in the order they are stored, loading up to 1 MB of raw
+data into memory.</li>
+<li><strong>Post-Fetch Filtering:</strong> Just as with a Query, if a
+<code>FilterExpression</code> is defined, DynamoDB applies it to the 1
+MB block of data <em>after</em> it has been read from storage.
+Non-matching items are discarded from the client response.</li>
+<li><strong>Pagination:</strong> If more items remain in the table after
+reaching the 1 MB limit, DynamoDB returns a
+<code>LastEvaluatedKey</code>. The client must issue a subsequent Scan
+request passing this key as the <code>ExclusiveStartKey</code> to
+continue reading through the table.</li>
+</ol>
+<p>Because a Scan examines the entire dataset, its execution time and
+resource consumption grow linearly as the table grows.</p>
+<h3 id="key-operational-differences">Key Operational Differences</h3>
+<h4 id="rcu-consumption">RCU Consumption</h4>
+<ul>
+<li><strong>Query:</strong> You are charged RCUs based only on the size
+of the items that match the key condition. Applying a
+<code>FilterExpression</code> does not reduce RCU consumption, but the
+scope of data read remains confined to the specified partition key.</li>
+<li><strong>Scan:</strong> You are charged RCUs for the total size of
+<em>all</em> items evaluated across the entire table, regardless of
+whether a <code>FilterExpression</code> discards most or all of
+them.</li>
+</ul>
+<h4 id="performance-and-latency">Performance and Latency</h4>
+<ul>
+<li><strong>Query:</strong> Executes rapidly and predictably because
+DynamoDB looks up data directly by its physical partition location.</li>
+<li><strong>Scan:</strong> Consumes significant I/O and takes longer to
+complete as table size increases. Running large Scans can exhaust
+provisioned read throughput and throttle concurrent application
+requests.</li>
+</ul>
+<h4 id="concurrency">Concurrency</h4>
+<ul>
+<li><strong>Query:</strong> Operates sequentially within a single
+partition collection per request.</li>
+<li><strong>Scan:</strong> Supports Parallel Scans, allowing an
+application to divide the table into multiple logical segments and
+process them concurrently using background worker threads.</li>
+</ul>
+<h3 id="when-to-use-each-operation">When to Use Each Operation</h3>
+<ul>
+<li><strong>Use Query</strong> for almost all standard application
+workloads. Queries are ideal for retrieving individual records,
+range-based lookups (such as time-series events for a specific user),
+and foreign-key-style lookups via Global Secondary Indexes (GSIs).</li>
+<li><strong>Use Scan</strong> sparingly. Scans are intended for
+full-table operations such as exporting data to an analytics pipeline
+(e.g., Amazon S3 via AWS Glue), database migrations, or auditing small
+lookup tables where maintaining an index is unnecessary.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-query-vs-scan-execution-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

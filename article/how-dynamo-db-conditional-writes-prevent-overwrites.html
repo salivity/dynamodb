@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Conditional Writes Prevent Overwrites - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB uses conditional writes to implement optimistic concurrency control, ensuring that write operations modify data only when specified criteria are met. In distributed applications where multiple processes attempt to update the same item simu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-conditional-writes-prevent-overwrites">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Conditional Writes Prevent Overwrites - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-conditional-writes-prevent-overwrites" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB uses conditional writes to implement optimistic concurrency control, ensuring that write operations modify data only when specified criteria are met. In distributed applications where multiple processes attempt to update the same item simu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-conditional-writes-prevent-overwrites">How DynamoDB
+Conditional Writes Prevent Overwrites</h1>
+<p>Amazon DynamoDB uses conditional writes to implement optimistic
+concurrency control, ensuring that write operations modify data only
+when specified criteria are met. In distributed applications where
+multiple processes attempt to update the same item simultaneously,
+conditional writes eliminate race conditions and avoid the "lost update"
+problem. This article explains how DynamoDB evaluates conditional
+expressions at the database engine level, the atomic validation
+workflow, and how applications leverage this mechanism to maintain data
+consistency.</p>
+<h3 id="the-race-condition-problem">The Race Condition Problem</h3>
+<p>In standard DynamoDB write operations (<code>PutItem</code>,
+<code>UpdateItem</code>, and <code>DeleteItem</code>), the last write
+wins by default. When multiple clients execute a read-modify-write
+pattern simultaneously, a race condition occurs:</p>
+<ol type="1">
+<li>Client A reads an item with <code>status = "pending"</code> and
+<code>version = 1</code>.</li>
+<li>Client B reads the same item with <code>status = "pending"</code>
+and <code>version = 1</code>.</li>
+<li>Client A updates the item with <code>status = "approved"</code> and
+<code>version = 2</code>.</li>
+<li>Client B updates the item with <code>status = "rejected"</code> and
+<code>version = 2</code>, inadvertently overwriting Client A's
+changes.</li>
+</ol>
+<p>Without synchronization, Client A's update is permanently lost.</p>
+<h3 id="the-internal-mechanics-of-conditional-writes">The Internal
+Mechanics of Conditional Writes</h3>
+<p>To resolve this issue, DynamoDB provides the
+<code>ConditionExpression</code> parameter. Instead of relying on
+client-side locks, DynamoDB enforces conditions directly at the
+partition level.</p>
+<h4 id="1-routing-to-the-partition-leader">1. Routing to the Partition
+Leader</h4>
+<p>Every DynamoDB table is partitioned across multiple storage nodes,
+with data replicated across three Availability Zones using a
+leader-follower consensus model (Paxos). When a write request containing
+a <code>ConditionExpression</code> arrives, DynamoDB's request router
+directs it exclusively to the leader node of that specific
+partition.</p>
+<h4 id="2-atomic-evaluation">2. Atomic Evaluation</h4>
+<p>The leader node evaluates the condition immediately before executing
+the write. Because the leader serializes all write operations for that
+partition, the check and the subsequent mutation happen atomically in a
+single, uninterrupted operation:</p>
+<ul>
+<li><strong>Evaluation:</strong> The storage engine reads the current
+state of the target item from local storage and evaluates the condition
+expression (e.g., <code>attribute_not_exists(id)</code> or
+<code>version = :current_version</code>).</li>
+<li><strong>Success:</strong> If the condition evaluates to
+<code>true</code>, the leader writes the changes to its transaction log,
+replicates the mutation to the follower nodes, and confirms the write to
+the client once a quorum is reached.</li>
+<li><strong>Failure:</strong> If the condition evaluates to
+<code>false</code>, the leader halts the operation immediately. No
+changes are committed to the transaction log, and DynamoDB returns a
+<code>ConditionalCheckFailedException</code> (HTTP 400).</li>
+</ul>
+<p>Because this check happens on the leader node during execution, no
+other write can slip in between the condition check and the update.</p>
+<h3 id="common-implementation-patterns">Common Implementation
+Patterns</h3>
+<h4 id="optimistic-locking-with-versioning">Optimistic Locking with
+Versioning</h4>
+<p>The most common approach to prevent concurrent overwrites is
+optimistic locking using a numeric version attribute:</p>
+<ul>
+<li><strong>Condition:</strong>
+<code>version = :expectedVersion</code></li>
+<li><strong>Update Expression:</strong>
+<code>SET #val = :newVal, version = version + :inc</code></li>
+</ul>
+<p>If two clients read <code>version = 1</code>, both will attempt to
+write with the condition that <code>version = 1</code>. The first
+request to reach the partition leader succeeds and increments the
+version to <code>2</code>. The second request fails because the item's
+version is now <code>2</code>, triggering a
+<code>ConditionalCheckFailedException</code>. The rejected client can
+then catch the error, read the updated record, and re-attempt the
+operation if appropriate.</p>
+<h4 id="preventing-duplicate-inserts">Preventing Duplicate Inserts</h4>
+<p>When creating new records, applications must often guarantee that an
+item does not already exist:</p>
+<ul>
+<li><strong>Condition:</strong>
+<code>attribute_not_exists(partitionKey)</code></li>
+</ul>
+<p>If an item with the same primary key already exists, DynamoDB rejects
+the write, preventing accidental overwrites of existing data.</p>
+<h3 id="cost-and-capacity-implications">Cost and Capacity
+Implications</h3>
+<p>A failed conditional write still consumes Write Capacity Units
+(WCUs). Because the partition leader must read and evaluate the item
+against the condition expression, DynamoDB bills the request as a write
+operation. To minimize failed writes and unnecessary capacity
+consumption, applications should employ exponential backoff and jitter
+algorithms when retrying operations that encounter a
+<code>ConditionalCheckFailedException</code>.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-conditional-writes-prevent-overwrites';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

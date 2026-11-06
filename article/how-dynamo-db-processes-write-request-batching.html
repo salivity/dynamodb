@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Processes Write Request Batching - dynamodb</title>
+    <meta name="description" content="This article explores how Amazon DynamoDB handles write request batching via the BatchWriteItem API to significantly reduce network round trips. By consolidating up to 25 individual write operations into a single network payload, applications can decrease">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-write-request-batching">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Processes Write Request Batching - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-write-request-batching" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explores how Amazon DynamoDB handles write request batching via the BatchWriteItem API to significantly reduce network round trips. By consolidating up to 25 individual write operations into a single network payload, applications can decrease" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-processes-write-request-batching">How DynamoDB
+Processes Write Request Batching</h1>
+<p>This article explores how Amazon DynamoDB handles write request
+batching via the <code>BatchWriteItem</code> API to significantly reduce
+network round trips. By consolidating up to 25 individual write
+operations into a single network payload, applications can decrease
+latency, minimize connection overhead, and optimize data ingestion
+pipelines. Below is a detailed breakdown of how DynamoDB receives,
+unpacks, executes, and responds to batched write requests.</p>
+<h3 id="the-batchwriteitem-mechanism">The BatchWriteItem Mechanism</h3>
+<p>DynamoDB uses the <code>BatchWriteItem</code> API action to group
+multiple write actions—specifically <code>PutItem</code> and
+<code>DeleteItem</code>—into a single HTTP request. A single batch can
+contain up to 25 individual items, with a total payload limit of 16 MB.
+Each individual item within the batch can be up to 400 KB. This
+operation can target a single table or span multiple tables
+simultaneously within the same AWS region and account.</p>
+<h3 id="eliminating-network-round-trips">Eliminating Network Round
+Trips</h3>
+<p>In standard point-in-time writes, saving 25 items requires 25
+separate network interactions. Each individual call incurs the cost of
+establishing or reusing an HTTP connection, TLS overhead, serialization,
+network latency, and waiting for an acknowledgment.</p>
+<p>By contrast, write request batching packages all 25 actions into a
+single serialized JSON or binary payload sent over one HTTP connection.
+The request arrives at a DynamoDB request router (part of the DynamoDB
+frontend fleet). This frontend service unpacks the grouped items and
+routes them to their respective storage partitions over AWS's
+high-speed, internal network. By replacing external network traversals
+with ultra-fast internal routing, overall application-side latency and
+CPU utilization drop substantially.</p>
+<h3 id="internal-parallel-processing">Internal Parallel Processing</h3>
+<p>Although sent as a single collection, DynamoDB does not execute
+batched write requests sequentially. Once the request router receives
+the batch, it separates the items based on their primary keys and
+dispatches them in parallel to the appropriate storage partition
+replicas. This parallel execution ensures that processing a batch of 25
+items takes roughly the same backend execution time as processing a
+single item, bounded only by internal partition throughput and consensus
+replication.</p>
+<h3 id="non-atomic-execution-and-error-handling">Non-Atomic Execution
+and Error Handling</h3>
+<p><code>BatchWriteItem</code> is not an atomic transaction. If one item
+in the batch fails, the entire batch does not roll back. Instead,
+DynamoDB executes as many valid requests as possible and returns an HTTP
+200 status code containing an <code>UnprocessedItems</code> object in
+the response.</p>
+<p>Items generally remain unprocessed due to:</p>
+<ul>
+<li>Exceeding the table’s provisioned write capacity or on-demand
+throughput limits.</li>
+<li>Exceeding the partition-level write threshold (1,000 WCUs per second
+per partition).</li>
+<li>Transient infrastructure bottlenecks.</li>
+</ul>
+<p>Because the response explicitly identifies which operations failed,
+the client does not need to retransmit the entire batch. Modern AWS SDKs
+automatically detect <code>UnprocessedItems</code> and implement
+exponential backoff algorithms to retry only the failed writes,
+preventing unnecessary network traffic for items that were already
+committed.</p>
+<h3 id="capacity-and-cost-efficiency">Capacity and Cost Efficiency</h3>
+<p>Write request batching optimizes network communication and
+application throughput, but it does not reduce DynamoDB capacity
+consumption. DynamoDB calculates Write Capacity Units (WCUs)
+individually for each item in the batch, rounding up to the nearest 1 KB
+increment per item just as it would for discrete <code>PutItem</code> or
+<code>DeleteItem</code> calls. The primary efficiency gained is entirely
+operational and architectural: fewer TCP connections, reduced thread
+blocking, lower serialization costs, and a dramatic reduction in network
+round-trip overhead.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-processes-write-request-batching';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

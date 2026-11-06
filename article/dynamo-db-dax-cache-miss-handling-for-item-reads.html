@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB DAX Cache Miss Handling for Item Reads - dynamodb</title>
+    <meta name="description" content="This article explains how Amazon DynamoDB Accelerator (DAX) manages cache misses during item read operations. When applications issue read requests like GetItem or BatchGetItem through DAX, the accelerator uses an inline, read-through caching mechanism to">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-dax-cache-miss-handling-for-item-reads">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB DAX Cache Miss Handling for Item Reads - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-dax-cache-miss-handling-for-item-reads" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Amazon DynamoDB Accelerator (DAX) manages cache misses during item read operations. When applications issue read requests like GetItem or BatchGetItem through DAX, the accelerator uses an inline, read-through caching mechanism to" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-dax-cache-miss-handling-for-item-reads">DynamoDB DAX
+Cache Miss Handling for Item Reads</h1>
+<p>This article explains how Amazon DynamoDB Accelerator (DAX) manages
+cache misses during item read operations. When applications issue read
+requests like <code>GetItem</code> or <code>BatchGetItem</code> through
+DAX, the accelerator uses an inline, read-through caching mechanism to
+fetch, populate, and return data seamlessly whenever a requested item is
+not already present in memory.</p>
+<h3 id="the-read-through-process-for-getitem">The Read-Through Process
+for <code>GetItem</code></h3>
+<p>DAX operates as an inline cache sitting directly between your
+application and the DynamoDB tables. When an application performs a
+<code>GetItem</code> operation, DAX processes the request in the
+following sequence during a cache miss:</p>
+<ol type="1">
+<li><strong>Cache Lookup:</strong> DAX evaluates its in-memory Item
+Cache using the partition key and sort key (if applicable) provided in
+the read request. It detects that the item is absent.</li>
+<li><strong>Read-Through to DynamoDB:</strong> Rather than returning an
+empty response or an error to the client, DAX immediately routes the
+request to the underlying DynamoDB table on behalf of the
+application.</li>
+<li><strong>Fetching the Item:</strong> DynamoDB fulfills the read
+request and sends the item data back to the DAX cluster.</li>
+<li><strong>Cache Population:</strong> Before returning the item to the
+client, DAX writes the retrieved item into its Item Cache.</li>
+<li><strong>Response Delivery:</strong> DAX sends the item back to the
+calling application.</li>
+</ol>
+<p>Any subsequent <code>GetItem</code> requests for the same key will
+register as a cache hit, serving the data directly from memory with
+microsecond latency until the item expires or is evicted.</p>
+<h3 id="handling-batchgetitem-requests">Handling
+<code>BatchGetItem</code> Requests</h3>
+<p>When an application issues a <code>BatchGetItem</code> call, the
+request may contain a mix of cached and non-cached items:</p>
+<ul>
+<li><strong>Partial Hits:</strong> DAX retrieves all matching items
+already present in the Item Cache.</li>
+<li><strong>Miss Delegation:</strong> DAX compiles the remaining keys
+that were not found in the cache and submits a consolidated read request
+directly to DynamoDB.</li>
+<li><strong>Reassembly and Caching:</strong> The items returned by
+DynamoDB are added to the DAX Item Cache, merged with the items
+retrieved from the initial cache hit, and returned to the application as
+a single response payload.</li>
+</ul>
+<h3 id="cache-eviction-and-expiration">Cache Eviction and
+Expiration</h3>
+<p>Items loaded into DAX following a cache miss are governed by two
+retention controls:</p>
+<ul>
+<li><strong>Time-to-Live (TTL):</strong> When creating or configuring a
+DAX cluster, an Item Cache TTL is specified. Items remain in the cache
+until this TTL elapses, at which point DAX treats future requests for
+that key as a miss and re-fetches the item from DynamoDB.</li>
+<li><strong>Least Recently Used (LRU) Eviction:</strong> If the DAX node
+runs out of memory before an item's TTL expires, DAX evicts older,
+less-frequently accessed items using an LRU algorithm to make room for
+newly fetched items.</li>
+</ul>
+<h3 id="strongly-consistent-reads">Strongly Consistent Reads</h3>
+<p>DAX only caches eventually consistent reads. If an application
+requests a strongly consistent read
+(<code>ConsistentRead = true</code>), DAX does not check the Item Cache,
+nor does it write the fetched item into the cache. Instead, it passes
+the request directly through to DynamoDB, retrieves the authoritative
+item, and returns it to the client without modifying the cache
+state.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-dax-cache-miss-handling-for-item-reads';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

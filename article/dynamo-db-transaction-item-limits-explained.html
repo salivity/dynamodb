@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Transaction Item Limits Explained - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides atomic, consistent, isolated, and durable (ACID) operations through its transaction APIs, but these operations are bounded by specific capacity and item thresholds. This guide outlines the exact limits on the number of items that">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-item-limits-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Transaction Item Limits Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-item-limits-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides atomic, consistent, isolated, and durable (ACID) operations through its transaction APIs, but these operations are bounded by specific capacity and item thresholds. This guide outlines the exact limits on the number of items that" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-transaction-item-limits-explained">DynamoDB Transaction
+Item Limits Explained</h1>
+<p>Amazon DynamoDB provides atomic, consistent, isolated, and durable
+(ACID) operations through its transaction APIs, but these operations are
+bounded by specific capacity and item thresholds. This guide outlines
+the exact limits on the number of items that can be processed in a
+single DynamoDB transaction, covering the maximum item counts, payload
+restrictions, and structural operational rules you must follow when
+designing transactional workflows.</p>
+<h2 id="maximum-item-count-limit">Maximum Item Count Limit</h2>
+<p>In Amazon DynamoDB, a single transaction can process a maximum of
+<strong>100 items</strong>. This limit applies uniformly to both primary
+transactional operations:</p>
+<ul>
+<li><strong><code>TransactWriteItems</code></strong>: Allows you to
+group up to 100 write actions—including <code>Put</code>,
+<code>Update</code>, <code>Delete</code>, and
+<code>ConditionCheck</code> requests—into a single, coordinated,
+all-or-nothing operation.</li>
+<li><strong><code>TransactGetItems</code></strong>: Allows you to
+retrieve up to 100 individual items atomically across one or more tables
+within the same AWS account and region.</li>
+</ul>
+<p><em>(Note: While the original service limit was 25 items at launch,
+AWS expanded this threshold to 100 items per transaction.)</em></p>
+<h2 id="payload-and-data-size-restrictions">Payload and Data Size
+Restrictions</h2>
+<p>In addition to the 100-item limit, transactions are governed by
+strict data volume ceilings:</p>
+<ul>
+<li><strong>Aggregate Transaction Size</strong>: The combined size of
+all items, keys, and expressions in a single transaction cannot exceed
+<strong>4 MB</strong>.</li>
+<li><strong>Individual Item Size</strong>: Standard DynamoDB rules
+apply; no single item in the transaction can exceed the platform limit
+of <strong>400 KB</strong>.</li>
+</ul>
+<p>If the sum of all items in your transaction exceeds 4 MB, the entire
+transaction will be rejected, even if you are processing fewer than 100
+items.</p>
+<h2 id="key-operational-constraints">Key Operational Constraints</h2>
+<p>When working within the 100-item transaction limit, several
+behavioral rules dictate how items can be targeted:</p>
+<ul>
+<li><strong>No Duplicate Item Actions</strong>: In a
+<code>TransactWriteItems</code> call, you cannot perform multiple
+actions on the same item within the same request. For instance, you
+cannot update an item and perform a condition check on it in the same
+transaction.</li>
+<li><strong>Condition Checks Count as Items</strong>: A standalone
+<code>ConditionCheck</code> action does not write data, but it verifies
+an item's state. Each <code>ConditionCheck</code> consumes one slot
+toward the 100-item maximum.</li>
+<li><strong>Cross-Table Operations</strong>: The 100 items can span
+across multiple tables within the same AWS Region and account. The
+100-item cap applies to the cumulative total across all involved tables,
+not 100 items per table.</li>
+<li><strong>Atomicity Overhead</strong>: If any single action or
+condition check fails within the set of items, the entire transaction is
+cancelled, and none of the changes are applied.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-transaction-item-limits-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

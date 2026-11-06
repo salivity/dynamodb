@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Time-Series Table Design Guide - dynamodb</title>
+    <meta name="description" content="Designing time-series data storage in Amazon DynamoDB requires a structure that accommodates high-velocity writes, supports efficient range-based queries, and manages data lifecycles cost-effectively. This article outlines the essential patterns for struc">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-time-series-table-design-guide">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Time-Series Table Design Guide - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-time-series-table-design-guide" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Designing time-series data storage in Amazon DynamoDB requires a structure that accommodates high-velocity writes, supports efficient range-based queries, and manages data lifecycles cost-effectively. This article outlines the essential patterns for struc" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-time-series-table-design-guide">DynamoDB Time-Series
+Table Design Guide</h1>
+<p>Designing time-series data storage in Amazon DynamoDB requires a
+structure that accommodates high-velocity writes, supports efficient
+range-based queries, and manages data lifecycles cost-effectively. This
+article outlines the essential patterns for structuring your tables,
+including composite primary key design, write-sharding techniques to
+prevent hot partitions, time-windowed tables for low-cost bulk deletion,
+and Time to Live (TTL) integration for automatic data retention
+management.</p>
+<h3 id="1-composite-primary-key-design">1. Composite Primary Key
+Design</h3>
+<p>The baseline architecture for time-series data in DynamoDB relies on
+a composite primary key consisting of a partition key (PK) and a sort
+key (SK):</p>
+<ul>
+<li><strong>Partition Key (Entity/Source ID):</strong> Identifies the
+entity generating the data, such as <code>SensorID</code>,
+<code>DeviceID</code>, or <code>VehicleID</code>. This ensures that data
+from the same source is grouped logically.</li>
+<li><strong>Sort Key (Timestamp):</strong> Stores the time component,
+typically as an ISO-8601 string or a Unix epoch timestamp.</li>
+</ul>
+<p>This structure allows you to use the <code>Query</code> API operation
+to retrieve specific time windows for a particular device using
+comparison operators such as <code>BETWEEN</code>, <code>&gt;</code>, or
+<code>&lt;</code>.</p>
+<h3 id="2-preventing-hot-partitions-with-sharding-and-bucketing">2.
+Preventing Hot Partitions with Sharding and Bucketing</h3>
+<p>When an individual device or system generates an extremely high
+volume of writes per second, a single partition key can exceed
+DynamoDB’s partition throughput limit (1,000 write capacity units per
+second). To solve this, apply partition bucketing:</p>
+<ul>
+<li><strong>Time-Based Bucketing:</strong> Append a time-frame suffix to
+the partition key (e.g., <code>Sensor123#2023-11-01-HH</code>). This
+splits incoming writes for a single sensor across multiple partitions
+throughout the day.</li>
+<li><strong>Random/Deterministic Suffixes:</strong> Append a random
+number (e.g., <code>Sensor123_1</code> through <code>Sensor123_N</code>)
+to distribute writes across distinct physical partitions, aggregating
+them on read.</li>
+</ul>
+<h3 id="3-time-windowed-tables-table-per-period-pattern">3.
+Time-Windowed Tables (Table-per-Period Pattern)</h3>
+<p>Instead of keeping all historical time-series data in a single
+massive table, create time-scoped tables (e.g., one table per day, week,
+or month):</p>
+<ul>
+<li><strong>Current Period Table:</strong> Handles high-volume
+read/write traffic with on-demand capacity or high provisioned
+throughput.</li>
+<li><strong>Historical Tables:</strong> Once a time window closes, the
+table switches to read-only mode with lowered provisioned throughput,
+significantly reducing storage and compute costs.</li>
+<li><strong>Bulk Deletion:</strong> Dropping an entire historical table
+is instantaneous and free, eliminating the need to consume write
+capacity units to delete individual expired items.</li>
+</ul>
+<h3 id="4-data-lifecycle-management-with-time-to-live-ttl">4. Data
+Lifecycle Management with Time to Live (TTL)</h3>
+<p>If time-windowed tables are impractical for your access patterns, use
+a single table combined with DynamoDB’s native Time to Live (TTL)
+feature:</p>
+<ul>
+<li>Define an attribute storing the expiration timestamp in Unix epoch
+format (in seconds).</li>
+<li>DynamoDB automatically identifies and deletes expired items in the
+background without consuming provisioned write capacity or impacting
+application throughput.</li>
+</ul>
+<h3 id="5-efficient-aggregation-with-global-secondary-indexes-gsis">5.
+Efficient Aggregation with Global Secondary Indexes (GSIs)</h3>
+<p>To read events across multiple entities within the same timeframe,
+global queries on the primary table become inefficient. Instead, utilize
+Global Secondary Indexes (GSIs):</p>
+<ul>
+<li><strong>Inverted Keys:</strong> Invert your keys in a GSI (e.g.,
+<code>Date</code> as the partition key and
+<code>SensorID#Timestamp</code> as the sort key) to fetch all sensor
+readings that occurred during a specific day.</li>
+<li><strong>Sparse GSIs for Critical Events:</strong> If you only need
+to query specific anomalies (e.g., error alerts), include an attribute
+like <code>AlertStatus</code> only on items that represent errors.
+DynamoDB will only populate the GSI with items containing that
+attribute, resulting in a compact, highly performant index for
+monitoring anomalies over time.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-time-series-table-design-guide';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

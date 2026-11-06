@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Merging During Traffic Drops - dynamodb</title>
+    <meta name="description" content="When application traffic to Amazon DynamoDB drops significantly, the database adjusts its internal resource distribution to maintain performance and avoid throttled requests. While DynamoDB historically retained its partition count indefinitely once split">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-merging-during-traffic-drops">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Merging During Traffic Drops - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-merging-during-traffic-drops" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When application traffic to Amazon DynamoDB drops significantly, the database adjusts its internal resource distribution to maintain performance and avoid throttled requests. While DynamoDB historically retained its partition count indefinitely once split" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-merging-during-traffic-drops">DynamoDB
+Partition Merging During Traffic Drops</h1>
+<p>When application traffic to Amazon DynamoDB drops significantly, the
+database adjusts its internal resource distribution to maintain
+performance and avoid throttled requests. While DynamoDB historically
+retained its partition count indefinitely once split, modern DynamoDB
+architecture employs automatic partition merging alongside adaptive
+capacity to consolidate underutilized partitions. This ensures that
+provisioned and consumed throughput adapts dynamically without stranding
+capacity across fragmented partitions.</p>
+<h3 id="partition-allocation-fundamentals">Partition Allocation
+Fundamentals</h3>
+<p>DynamoDB distributes table data and throughput across multiple
+physical partitions. Each individual partition can support a maximum
+of:</p>
+<ul>
+<li>10 GB of data storage</li>
+<li>1,000 Write Capacity Units (WCU)</li>
+<li>3,000 Read Capacity Units (RCU)</li>
+</ul>
+<p>When a table exceeds any of these thresholds, DynamoDB splits the
+partition into two or more new partitions, dividing both the data
+keyspace and the provisioned throughput evenly among them.</p>
+<h3 id="historical-behavior-the-one-way-partition-split">Historical
+Behavior: The One-Way Partition Split</h3>
+<p>Historically, partition splitting in DynamoDB was a strictly one-way
+operation. If an application experienced a high-traffic event (such as a
+flash sale) that caused DynamoDB to scale up to 100 partitions, the
+table remained split across 100 partitions even after traffic dropped
+back to baseline levels.</p>
+<p>Under this legacy behavior:</p>
+<ul>
+<li>Total provisioned throughput was divided equally across all active
+partitions (for example, 1,000 WCU across 100 partitions yielded only 10
+WCU per partition).</li>
+<li>A subsequent uneven access pattern could cause individual partitions
+to throttle, even if the total table-level throughput was far below the
+allocated limit.</li>
+</ul>
+<h3 id="modern-behavior-automatic-partition-merging">Modern Behavior:
+Automatic Partition Merging</h3>
+<p>To eliminate the inefficiencies of permanent partition splitting, AWS
+introduced automatic partition merging. When table storage decreases
+(e.g., via bulk deletes or Time to Live) or when read/write traffic
+decreases significantly over an extended period, DynamoDB merges
+adjacent partitions.</p>
+<p>During a traffic drop, the partition reallocation process works
+through the following stages:</p>
+<ol type="1">
+<li><strong>Usage Monitoring:</strong> DynamoDB’s control plane
+continuously tracks partition-level metrics, identifying partitions
+whose combined storage and sustained throughput fall well below the
+limits of a single partition.</li>
+<li><strong>Background Consolidation:</strong> DynamoDB initiates a
+non-disruptive, asynchronous background process to merge adjacent key
+ranges.</li>
+<li><strong>Throughput Reassignment:</strong> As partitions merge, their
+assigned throughput limits combine. This prevents provisioned capacity
+from being diluted across an unnecessarily large number of
+partitions.</li>
+<li><strong>Zero-Downtime Cutover:</strong> Routing routers update their
+partition key maps atomically, ensuring ongoing reads and writes
+experience no downtime or elevated error rates during the
+transition.</li>
+</ol>
+<h3 id="the-role-of-adaptive-capacity">The Role of Adaptive
+Capacity</h3>
+<p>Partition merging takes time to evaluate and execute because it is
+designed to optimize long-term resource efficiency rather than react to
+temporary dips. To handle short-term drops and localized spikes,
+DynamoDB relies on <strong>Adaptive Capacity</strong>.</p>
+<p>If traffic drops overall but remains concentrated on a small subset
+of partitions, Adaptive Capacity automatically shifts unused throughput
+from cold partitions to warm partitions. This ensures that even before
+partition merging completes, uneven traffic distributions do not trigger
+false throttling errors.</p>
+<h3 id="impact-across-capacity-modes">Impact Across Capacity Modes</h3>
+<p>The handling of partition resources when traffic drops varies
+slightly depending on the table's billing mode:</p>
+<ul>
+<li><strong>On-Demand Mode:</strong> DynamoDB automatically tracks peak
+traffic and accommodates drop-offs without manual tuning. If traffic
+drops, DynamoDB does not throttle; it simply charges for the exact
+requests made while gradually consolidating partitions in the background
+if consumption remains low.</li>
+<li><strong>Provisioned Mode:</strong> If traffic drops but you keep
+your provisioned throughput high, the capacity remains assigned across
+the existing partition topology. If you lower your provisioned capacity
+settings (manually or via Application Auto Scaling), DynamoDB downscales
+total allocated capacity and triggers partition consolidation if the
+lower throughput no longer justifies the current partition count.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-merging-during-traffic-drops';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

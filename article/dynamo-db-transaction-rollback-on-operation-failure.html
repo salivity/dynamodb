@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Transaction Rollback on Operation Failure - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB supports full ACID (Atomicity, Consistency, Isolation, Durability) guarantees using its transactional APIs, primarily TransactWriteItems. When a single operation within a transactional write batch fails, DynamoDB immediately aborts the ent">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-rollback-on-operation-failure">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Transaction Rollback on Operation Failure - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-rollback-on-operation-failure" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB supports full ACID (Atomicity, Consistency, Isolation, Durability) guarantees using its transactional APIs, primarily TransactWriteItems. When a single operation within a transactional write batch fails, DynamoDB immediately aborts the ent" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-transaction-rollback-on-operation-failure">DynamoDB
+Transaction Rollback on Operation Failure</h1>
+<p>Amazon DynamoDB supports full ACID (Atomicity, Consistency,
+Isolation, Durability) guarantees using its transactional APIs,
+primarily <code>TransactWriteItems</code>. When a single operation
+within a transactional write batch fails, DynamoDB immediately aborts
+the entire transaction, rejects all accompanying operations, and rolls
+back any staged changes so that no partial data is persisted. This
+article explains the internal two-phase coordination DynamoDB uses, why
+rollbacks occur, and how to identify and handle failed operations in
+your application.</p>
+<h2 id="the-two-phase-transaction-process">The Two-Phase Transaction
+Process</h2>
+<p>DynamoDB uses an internal two-phase consensus protocol to execute
+transactions across multiple partitions and tables:</p>
+<ol type="1">
+<li><strong>Validation and Preparation Phase:</strong> DynamoDB
+validates all operations in the <code>TransactWriteItems</code> request.
+It verifies that the request does not exceed transactional limits (up to
+100 actions or 4 MB of data), evaluates all conditional expressions, and
+confirms that sufficient write capacity is available across all targeted
+items. Items are reserved to prevent conflicting operations.</li>
+<li><strong>Commit Phase:</strong> If every pre-condition and capacity
+check succeeds across all operations in the batch, DynamoDB commits the
+writes permanently to storage across the respective partitions.</li>
+</ol>
+<p>If any single operation encounters an error during the preparation
+phase, DynamoDB terminates the execution pipeline immediately. Because
+no data is written to permanent storage until all operations pass
+validation, the "rollback" in DynamoDB is an automatic abort: the
+reserved items are released, and the tables remain in their
+pre-transaction states.</p>
+<h2 id="the-transactioncanceledexception">The
+<code>TransactionCanceledException</code></h2>
+<p>When an operation in a batch fails, DynamoDB responds with a
+<code>TransactionCanceledException</code>. Along with this HTTP 400
+error, the response payload includes a <code>CancellationReasons</code>
+array.</p>
+<p>The <code>CancellationReasons</code> array maintains a strict
+one-to-one positional mapping with the operations submitted in the
+<code>TransactWriteItems</code> request:</p>
+<ul>
+<li>If an action succeeded its validation check, its corresponding entry
+in <code>CancellationReasons</code> contains the code
+<code>None</code>.</li>
+<li>If an action caused the rollback, its entry contains a specific
+failure code detailing the exact reason.</li>
+</ul>
+<p>This structure allows client applications to pinpoint precisely which
+item and operation caused the entire batch to fail.</p>
+<h2 id="common-causes-of-transaction-rollback">Common Causes of
+Transaction Rollback</h2>
+<p>DynamoDB triggers a transaction rollback under several specific
+conditions:</p>
+<ul>
+<li><strong>ConditionalCheckFailed:</strong> A condition expression
+attached to a <code>Put</code>, <code>Update</code>, or
+<code>Delete</code> operation evaluated to false. If even one item fails
+its condition, the entire batch is rejected.</li>
+<li><strong>TransactionConflict:</strong> Another concurrent transaction
+or write request attempted to modify one or more of the same items
+simultaneously. DynamoDB rejects the transaction to preserve
+isolation.</li>
+<li><strong>ProvisionedThroughputExceeded:</strong> One or more target
+partitions lack the provisioned or on-demand capacity required to
+complete the operation.</li>
+<li><strong>ValidationError / ItemCollectionSizeLimitExceeded:</strong>
+An operation exceeds schema constraints, data size limits, or Local
+Secondary Index (LSI) item collection boundaries.</li>
+</ul>
+<h2 id="handling-transaction-rollbacks-in-code">Handling Transaction
+Rollbacks in Code</h2>
+<p>Because DynamoDB rolls back the entire batch atomically, handling
+failed transactions requires determining whether the failure is
+transient or logic-based:</p>
+<ol type="1">
+<li><strong>Inspect <code>CancellationReasons</code>:</strong> Parse the
+error response to inspect each element of the
+<code>CancellationReasons</code> list.</li>
+<li><strong>Retry on Conflicts:</strong> If the rollback occurred due to
+a <code>TransactionConflict</code> or throughput throttling, apply
+exponential backoff and jitter before retrying the transaction.</li>
+<li><strong>Correct Application State on Logic Failures:</strong> If the
+cancellation was caused by a <code>ConditionalCheckFailed</code>,
+retrying immediately will produce the same outcome. Fetch the latest
+state of the data, re-evaluate the business logic, and construct a new
+transaction request accordingly.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-transaction-rollback-on-operation-failure';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

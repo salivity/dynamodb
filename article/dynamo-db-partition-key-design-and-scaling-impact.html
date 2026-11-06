@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Key Design and Scaling Impact - dynamodb</title>
+    <meta name="description" content="Selecting an inadequate partition key in Amazon DynamoDB directly undermines the database&#39;s ability to scale horizontally, leading to localized performance bottlenecks, request throttling, and unnecessary cloud costs. Because DynamoDB distributes data and">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-design-and-scaling-impact">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Key Design and Scaling Impact - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-design-and-scaling-impact" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Selecting an inadequate partition key in Amazon DynamoDB directly undermines the database&#39;s ability to scale horizontally, leading to localized performance bottlenecks, request throttling, and unnecessary cloud costs. Because DynamoDB distributes data and" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-key-design-and-scaling-impact">DynamoDB
+Partition Key Design and Scaling Impact</h1>
+<p>Selecting an inadequate partition key in Amazon DynamoDB directly
+undermines the database's ability to scale horizontally, leading to
+localized performance bottlenecks, request throttling, and unnecessary
+cloud costs. Because DynamoDB distributes data and I/O operations across
+physical storage nodes based on the partition key's hash value, a poorly
+chosen key concentrates traffic onto limited hardware resources. This
+article examines the architectural mechanics behind DynamoDB
+partitioning, the direct consequences of poor key selection—such as hot
+partitions and throughput limits—and how these failures impact
+application availability and operational expenses.</p>
+<h3 id="the-mechanics-of-dynamodb-partitioning">The Mechanics of
+DynamoDB Partitioning</h3>
+<p>DynamoDB achieves horizontal scalability by splitting data across
+multiple physical partitions. Each partition is allocated up to 10 GB of
+storage and supports a maximum of 1,000 Write Capacity Units (WCUs) or
+3,000 Read Capacity Units (RCUs).</p>
+<p>When an item is written or read, DynamoDB feeds the partition key
+into an internal hash function to determine the exact physical partition
+responsible for hosting that data. For the system to scale efficiently,
+this hashing mechanism requires an even distribution of unique partition
+key values to spread both read/write workloads and total storage evenly
+across all provisioned partitions.</p>
+<h3 id="creation-of-hot-partitions-and-request-throttling">Creation of
+"Hot Partitions" and Request Throttling</h3>
+<p>When an application uses a low-cardinality attribute (such as a
+status flag, gender, or a static tenant ID) or a time-based attribute
+(such as the current date) as the partition key, large volumes of
+traffic target the same hash value simultaneously. This creates a "hot
+partition."</p>
+<p>Regardless of how many total capacity units are provisioned for the
+entire table, an individual physical partition cannot exceed its hard
+limits of 1,000 WCUs or 3,000 RCUs. Once a hot partition breaches these
+thresholds, DynamoDB rejects subsequent requests to that partition by
+returning a <code>ProvisionedThroughputExceededException</code>. While
+DynamoDB includes an "adaptive capacity" feature to temporarily burst
+throughput to hot partitions, it cannot protect against sustained
+traffic spikes that exceed partition limits.</p>
+<h3 id="financial-and-operational-inefficiencies">Financial and
+Operational Inefficiencies</h3>
+<p>An inadequate key design often leads to counterproductive remediation
+attempts, primarily over-provisioning capacity. In provisioned mode, if
+one partition requires 2,000 WCUs, an operator might increase the entire
+table’s capacity. Because DynamoDB allocates provisioned throughput
+uniformly across all existing physical partitions, the vast majority of
+provisioned capacity remains idle, significantly inflating
+infrastructure costs while leaving the underlying bottleneck
+unaddressed.</p>
+<p>In on-demand mode, severe hotspots still cause throttled requests
+because on-demand capacity does not bypass physical hardware partition
+boundaries.</p>
+<h3 id="unbalanced-data-growth-and-partition-splitting">Unbalanced Data
+Growth and Partition Splitting</h3>
+<p>A physical partition splits when its data size exceeds 10 GB or when
+throughput requirements demand additional hardware. If a partition key
+holds an excessive amount of data—such as appending infinite log events
+to a single customer ID—the partition will repeatedly split. Over time,
+this leads to an asymmetric distribution of data where some partitions
+are bloated and overloaded, while others sit completely empty, making
+query performance unpredictable.</p>
+<h3 id="cascading-impact-on-global-secondary-indexes-gsis">Cascading
+Impact on Global Secondary Indexes (GSIs)</h3>
+<p>The negative effects of poor key selection amplify when applied to
+Global Secondary Indexes. If a GSI has an inadequate partition key
+design and experiences throttling, it back-pressures the base table. In
+DynamoDB, a write to a base table will fail if any associated GSI cannot
+accept the corresponding update. Consequently, an inefficient partition
+key on a GSI can degrade the availability of the entire write path
+across the main application.</p>
+<h3 id="designing-for-scalability">Designing for Scalability</h3>
+<p>To prevent scaling failures, partition keys must exhibit high
+cardinality and uniform access patterns. Optimal partition keys include
+unique identifiers such as UUIDs, device IDs, or user IDs. When
+sequential access patterns (such as timestamps) are unavoidable,
+techniques like write sharding—appending a random or calculated suffix
+to the key—must be implemented to distribute write operations across
+multiple physical partitions before querying.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-design-and-scaling-impact';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB GSI Projections: Impact on Read Costs - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, Global Secondary Index (GSI) attribute projections—KEYSONLY, INCLUDE, and ALL—directly dictate read costs by determining the byte size of indexed items and deciding whether your application requires secondary queries against the base t">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-gsi-projections-impact-on-read-costs">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB GSI Projections: Impact on Read Costs - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-gsi-projections-impact-on-read-costs" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, Global Secondary Index (GSI) attribute projections—KEYSONLY, INCLUDE, and ALL—directly dictate read costs by determining the byte size of indexed items and deciding whether your application requires secondary queries against the base t" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-gsi-projections-impact-on-read-costs">DynamoDB GSI
+Projections: Impact on Read Costs</h1>
+<p>In Amazon DynamoDB, Global Secondary Index (GSI) attribute
+projections—<code>KEYS_ONLY</code>, <code>INCLUDE</code>, and
+<code>ALL</code>—directly dictate read costs by determining the byte
+size of indexed items and deciding whether your application requires
+secondary queries against the base table. Choosing the right projection
+balances the cost of reading larger payloads from the GSI against the
+cost of performing additional read operations to fetch non-projected
+attributes.</p>
+<h3 id="how-gsi-read-capacity-units-are-calculated">How GSI Read
+Capacity Units Are Calculated</h3>
+<p>DynamoDB bills GSI reads based on Read Capacity Units (RCUs). Because
+GSIs only support eventually consistent reads, one RCU provides two
+reads per second for items up to 4 KB in size (0.5 RCU per item up to 4
+KB). When an item exceeds 4 KB, DynamoDB rounds up to the next 4 KB
+multiplier.</p>
+<p>The projection type determines the physical size of the item stored
+in the GSI:</p>
+<ul>
+<li><strong><code>KEYS_ONLY</code></strong>: Projects only the partition
+key, sort key, and base table primary keys. This produces the smallest
+possible item footprint.</li>
+<li><strong><code>INCLUDE</code></strong>: Projects specified non-key
+attributes alongside the key schema, keeping item sizes controlled while
+providing needed data.</li>
+<li><strong><code>ALL</code></strong>: Copies every attribute from the
+base table into the index, resulting in the largest item
+footprints.</li>
+</ul>
+<h3 id="the-direct-cost-item-size-multipliers">The Direct Cost: Item
+Size Multipliers</h3>
+<p>If you choose the <code>ALL</code> projection or include large
+attributes via <code>INCLUDE</code>, the index record inherits the full
+weight of those fields. For example, reading an item from a GSI with a 3
+KB projection consumes 0.5 RCU. If projecting all attributes expands
+that same item to 9 KB, reading it requires 1.5 RCUs (rounded up to the
+nearest 4 KB increment). For high-volume query patterns, projecting
+unnecessary data scales up RCU consumption linearly with item size.</p>
+<h3 id="the-indirect-cost-secondary-lookups-base-table-fetching">The
+Indirect Cost: Secondary Lookups (Base Table Fetching)</h3>
+<p>Under-projecting attributes creates a different, often more expensive
+read cost. If a query requires an attribute not present in a
+<code>KEYS_ONLY</code> or minimal <code>INCLUDE</code> projection, your
+application must execute a two-step read:</p>
+<ol type="1">
+<li>Query the GSI to retrieve the base table’s primary keys (consuming
+GSI RCUs).</li>
+<li>Execute a <code>BatchGetItem</code> or sequential
+<code>GetItem</code> requests against the base table to fetch the
+missing attributes (consuming base table RCUs).</li>
+</ol>
+<p>This pattern doubles the number of read requests. If you perform
+strongly consistent reads on the base table during the second step, you
+consume 1 RCU per 4 KB instead of the GSI's 0.5 RCU rate. The
+operational overhead of handling two round trips also adds latency and
+network overhead alongside increased billing.</p>
+<h3 id="optimizing-gsi-projections-for-cost">Optimizing GSI Projections
+for Cost</h3>
+<p>To minimize read expenses:</p>
+<ul>
+<li><strong>Use <code>INCLUDE</code> for defined query
+patterns:</strong> Identify the exact subset of attributes your access
+patterns require and project only those. This prevents items from
+spilling over 4 KB boundaries while avoiding subsequent base table
+lookups.</li>
+<li><strong>Use <code>KEYS_ONLY</code> for existence checks:</strong> If
+an access pattern only needs to determine whether a record exists or
+count matching entries, <code>KEYS_ONLY</code> minimizes read costs by
+keeping items well within the base 4 KB limit.</li>
+<li><strong>Reserve <code>ALL</code> for wide data
+requirements:</strong> Use <code>ALL</code> only when queries
+consistently need the full object graph, making the single, larger GSI
+read cheaper than executing a secondary base table read.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-gsi-projections-impact-on-read-costs';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

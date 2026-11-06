@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB High Availability Across Availability Zones - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB maintains high availability and durability by automatically replicating data synchronously across at least three distinct Availability Zones (AZs) within an AWS Region. This article explains the underlying architecture that enables DynamoD">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-high-availability-across-availability-zones">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB High Availability Across Availability Zones - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-high-availability-across-availability-zones" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB maintains high availability and durability by automatically replicating data synchronously across at least three distinct Availability Zones (AZs) within an AWS Region. This article explains the underlying architecture that enables DynamoD" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-high-availability-across-availability-zones">DynamoDB
+High Availability Across Availability Zones</h1>
+<p>Amazon DynamoDB maintains high availability and durability by
+automatically replicating data synchronously across at least three
+distinct Availability Zones (AZs) within an AWS Region. This article
+explains the underlying architecture that enables DynamoDB to survive AZ
+failures without data loss or service disruption, focusing on its use of
+storage partitioning, the Paxos consensus algorithm, automated leader
+election, and intelligent request routing.</p>
+<h3 id="synchronous-3-az-replication">Synchronous 3-AZ Replication</h3>
+<p>When a table is created in DynamoDB, the service automatically
+allocates storage resources across at least three physically isolated
+Availability Zones within the target region. Each AZ runs on independent
+power, cooling, and network infrastructure. DynamoDB automatically
+replicates table data across these three zones synchronously, ensuring
+that the loss of an entire data center or AZ does not compromise data
+durability or availability.</p>
+<h3 id="partitioning-and-replica-sets">Partitioning and Replica
+Sets</h3>
+<p>DynamoDB distributes table data into smaller storage segments called
+partitions based on partition key hash values. For high
+availability:</p>
+<ul>
+<li>Each logical partition consists of a <strong>replica set</strong>
+containing three physical replicas.</li>
+<li>Each of the three replicas is hosted on separate physical storage
+servers located in a different AZ.</li>
+<li>This one-partition-per-AZ distribution ensures that no single zone
+outage can affect more than one replica in a given replica set.</li>
+</ul>
+<h3 id="paxos-consensus-and-quorum-writes">Paxos Consensus and Quorum
+Writes</h3>
+<p>To ensure strong consistency and prevent split-brain scenarios,
+DynamoDB uses a consensus algorithm based on the Paxos protocol:</p>
+<ul>
+<li><strong>Write Operations:</strong> For a write operation to succeed,
+a write quorum must be achieved. Because each replica set consists of
+three nodes, a quorum requires confirmation from a majority—at least two
+out of the three replicas.</li>
+<li><strong>Resilience to Failure:</strong> If one AZ experiences an
+outage, the remaining two replicas in the other two AZs still constitute
+a majority (2 of 3). As a result, write operations continue without
+interruption, and the service remains fully operational.</li>
+</ul>
+<h3 id="leader-election-and-failover">Leader Election and Failover</h3>
+<p>Each replica set elects a leader replica using Paxos:</p>
+<ul>
+<li><strong>Leader Responsibilities:</strong> The leader replica is
+responsible for coordinating write operations and serving strongly
+consistent read requests.</li>
+<li><strong>Automated Failover:</strong> If the leader replica resides
+in an AZ that fails or becomes unreachable, the remaining two peer
+replicas detect the absence of heartbeats and initiate a new election. A
+new leader is elected from the healthy AZs in milliseconds, requiring no
+manual intervention and causing no noticeable downtime for client
+applications.</li>
+</ul>
+<h3 id="read-consistency-strategies">Read Consistency Strategies</h3>
+<p>DynamoDB supports two read consistency models to optimize performance
+and availability across AZs:</p>
+<ul>
+<li><strong>Eventually Consistent Reads (Default):</strong> These reads
+can be served by any of the three replicas across any AZ. This spreads
+the read workload, lowers latency, and ensures reads can proceed even if
+communication with the leader node is temporarily degraded.</li>
+<li><strong>Strongly Consistent Reads:</strong> These reads are routed
+directly to the leader replica (or validated via quorum) to guarantee
+that the response reflects all previously successful write
+operations.</li>
+</ul>
+<h3 id="self-healing-and-node-replacement">Self-Healing and Node
+Replacement</h3>
+<p>Beyond AZ-level fault tolerance, DynamoDB continuously monitors the
+health of individual storage nodes:</p>
+<ul>
+<li><strong>Automated Repair:</strong> When a replica fails or becomes
+permanently degraded, DynamoDB's control plane automatically provisions
+a replacement replica on a healthy node in the appropriate AZ.</li>
+<li><strong>Log Catch-Up:</strong> The new replica restores data from
+the write-ahead logs of the surviving replicas to bring itself back into
+synchronization without impacting active transactions.</li>
+</ul>
+<h3 id="stateless-request-routers">Stateless Request Routers</h3>
+<p>Client requests to DynamoDB pass through a fleet of stateless request
+routers. These routers continuously track the state of storage
+partitions, leader assignments, and zone health. If an AZ goes down, the
+routing layer automatically shifts traffic away from the impacted zone
+and directs incoming API calls directly to the healthy replicas in the
+operational zones.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-high-availability-across-availability-zones';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

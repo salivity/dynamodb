@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Evaluates Nested Condition Expressions - dynamodb</title>
+    <meta name="description" content="This article explains how Amazon DynamoDB processes condition expressions targeting nested attributes within document data types such as Maps and Lists. It details document path syntax, the step-by-step evaluation lifecycle against the existing item state">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-nested-condition-expressions">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Evaluates Nested Condition Expressions - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-nested-condition-expressions" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Amazon DynamoDB processes condition expressions targeting nested attributes within document data types such as Maps and Lists. It details document path syntax, the step-by-step evaluation lifecycle against the existing item state" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-evaluates-nested-condition-expressions">How
+DynamoDB Evaluates Nested Condition Expressions</h1>
+<p>This article explains how Amazon DynamoDB processes condition
+expressions targeting nested attributes within document data types such
+as Maps and Lists. It details document path syntax, the step-by-step
+evaluation lifecycle against the existing item state, the behavior of
+common functions when parent or child keys are missing, and how
+conditional failures are handled during write operations.</p>
+<h3 id="document-path-resolution">Document Path Resolution</h3>
+<p>DynamoDB uses document paths to navigate complex, nested JSON-like
+structures (Maps and Lists). When evaluating a condition expression on
+nested attributes, the engine first resolves the path hierarchy:</p>
+<ul>
+<li><strong>Maps (Objects):</strong> Accessed using dot notation (e.g.,
+<code>Address.City</code> or <code>#parent.#child</code> with Expression
+Attribute Names).</li>
+<li><strong>Lists (Arrays):</strong> Accessed using zero-based bracketed
+integer indexes (e.g., <code>PhoneNumbers[0]</code> or
+<code>Preferences.Colors[2]</code>).</li>
+</ul>
+<p>To prevent issues with reserved keywords or special characters (such
+as hyphens or dots in map keys), DynamoDB requires or strongly advises
+the use of Expression Attribute Names placeholders (such as
+<code>#a.#b</code>) to define the traversal path.</p>
+<h3 id="evaluation-lifecycle-and-state-checking">Evaluation Lifecycle
+and State Checking</h3>
+<p>Condition expressions are evaluated against the current state of the
+item stored in DynamoDB immediately before a write operation
+(<code>PutItem</code>, <code>UpdateItem</code>, or
+<code>DeleteItem</code>) is committed.</p>
+<ol type="1">
+<li><strong>Read Target Item:</strong> DynamoDB reads the existing item
+from the partition. If the item does not exist, the evaluation treats
+all attributes as non-existent.</li>
+<li><strong>Path Traversal:</strong> The evaluation engine follows the
+path from the root attribute down to the target node.</li>
+<li><strong>Expression Application:</strong> The operator
+(<code>=</code>, <code>&lt;&gt;</code>, <code>&lt;</code>,
+<code>&gt;</code>, <code>BETWEEN</code>, <code>IN</code>) or built-in
+function (<code>attribute_exists</code>,
+<code>attribute_not_exists</code>, <code>begins_with</code>,
+<code>contains</code>, <code>size</code>) is applied to the resolved
+value.</li>
+<li><strong>Commit or Abort:</strong> If the full expression evaluates
+to <code>true</code>, the write operation proceeds atomically. If it
+evaluates to <code>false</code>, the operation is aborted, and DynamoDB
+returns a <code>ConditionalCheckFailedException</code>.</li>
+</ol>
+<h3 id="handling-missing-attributes-and-partial-paths">Handling Missing
+Attributes and Partial Paths</h3>
+<p>A critical aspect of nested condition evaluation is how DynamoDB
+handles broken paths, where an intermediate parent node or the final
+leaf node does not exist in the item:</p>
+<ul>
+<li><strong>Comparison Operators (<code>=</code>, <code>&gt;</code>,
+<code>&lt;</code>, etc.):</strong> If any element in the path chain is
+missing (for example, evaluating <code>User.Profile.Age &gt; 18</code>
+when <code>Profile</code> does not exist), the path cannot be resolved.
+The expression evaluates to <code>false</code>.</li>
+<li><strong><code>attribute_exists(path)</code>:</strong> Evaluates to
+<code>true</code> only if every element in the document path exists down
+to the final target attribute. If any intermediate parent or the target
+leaf itself is missing, it evaluates to <code>false</code>.</li>
+<li><strong><code>attribute_not_exists(path)</code>:</strong> Evaluates
+to <code>true</code> if the final attribute is missing, or if any
+ancestor along the path does not exist. For example,
+<code>attribute_not_exists(Metadata.Audit.Timestamp)</code> returns
+<code>true</code> if <code>Metadata</code> is missing, if
+<code>Audit</code> is missing, or if <code>Timestamp</code> is
+missing.</li>
+<li><strong>Functions (<code>size()</code>, <code>begins_with()</code>,
+<code>contains()</code>):</strong> These functions require the target
+attribute to exist and be of the expected data type. If the attribute
+does not exist or the intermediate path is absent, the function cannot
+execute, causing the condition expression to evaluate to
+<code>false</code>.</li>
+</ul>
+<h3 id="data-type-matching-in-nested-checks">Data Type Matching in
+Nested Checks</h3>
+<p>DynamoDB strictly enforces type checks during condition
+evaluation:</p>
+<ul>
+<li>Evaluating a numeric comparison against a nested string value
+evaluates to <code>false</code>.</li>
+<li>Using list-index traversal on a map attribute (e.g.,
+<code>MapAttribute[0]</code>) or dot-notation traversal on a list
+attribute results in a <code>ValidationException</code> during request
+validation, aborting the request before condition evaluation
+occurs.</li>
+<li>When evaluating arrays via <code>size(ListPath)</code>, the target
+must explicitly resolve to a List, Set, Map, or String. If the path
+leads to a primitive number or boolean, the evaluation yields
+<code>false</code>.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-nested-condition-expressions';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

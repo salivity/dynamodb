@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Handles Sparse Attribute Storage - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB is a fully managed NoSQL database designed to handle varying data structures without requiring a fixed tabular schema. Because it operates on a schemaless model, DynamoDB manages storage allocation for sparse attributes dynamically at the">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-sparse-attribute-storage">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Handles Sparse Attribute Storage - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-sparse-attribute-storage" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB is a fully managed NoSQL database designed to handle varying data structures without requiring a fixed tabular schema. Because it operates on a schemaless model, DynamoDB manages storage allocation for sparse attributes dynamically at the" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-handles-sparse-attribute-storage">How DynamoDB
+Handles Sparse Attribute Storage</h1>
+<p>Amazon DynamoDB is a fully managed NoSQL database designed to handle
+varying data structures without requiring a fixed tabular schema.
+Because it operates on a schemaless model, DynamoDB manages storage
+allocation for sparse attributes dynamically at the item level. Instead
+of reserving space for missing fields, DynamoDB stores only the specific
+attributes present in each item, ensuring that sparse data consumes zero
+storage capacity and incurs no unnecessary read/write costs.</p>
+<h3 id="schemaless-architecture-and-item-level-storage">Schemaless
+Architecture and Item-Level Storage</h3>
+<p>In a traditional relational database management system (RDBMS),
+defining a column reserves a fixed location in every row's disk layout.
+If an attribute is missing or left empty, the system often allocates
+space for null markers or padding.</p>
+<p>DynamoDB operates differently. Outside of the primary key (the
+partition key and optional sort key), DynamoDB enforces no rigid schema
+across items within a table. Each item is stored as an independent
+document-style entry containing its own set of attributes. If an
+attribute is not present on an item, it does not exist in that item's
+physical record. Consequently, there is no storage pre-allocation or
+disk overhead for sparse or absent attributes.</p>
+<h3 id="how-storage-size-is-calculated">How Storage Size Is
+Calculated</h3>
+<p>DynamoDB calculates storage consumption based strictly on the raw
+data encoded within an item. The total storage consumed by an item
+equals:</p>
+<ul>
+<li>The length of each attribute name in UTF-8 bytes.</li>
+<li>The length of each attribute value in bytes (determined by the data
+type, such as strings, numbers, binary data, or booleans).</li>
+<li>An additional 100 bytes of overhead per item for internal indexing
+and management.</li>
+</ul>
+<p>Because missing attributes do not include attribute names or values,
+they add zero bytes to the item's total size. This directly benefits
+cost and throughput: write capacity units (WCUs) and read capacity units
+(RCUs) are billed based on item size rounded up to the nearest 1 KB or 4
+KB increments, respectively. Keeping items lean by omitting sparse
+attributes keeps capacity consumption lower.</p>
+<h3 id="sparse-global-secondary-indexes-gsis">Sparse Global Secondary
+Indexes (GSIs)</h3>
+<p>DynamoDB extends storage efficiency to secondary indexes through a
+feature known as sparse indexes. A Global Secondary Index (GSI) or Local
+Secondary Index (LSI) is considered sparse when its partition key or
+sort key is an attribute that does not appear in every table item.</p>
+<p>When an item is written or updated in the base table:</p>
+<ol type="1">
+<li>DynamoDB checks whether the item contains the attributes defined as
+the index's partition key and sort key.</li>
+<li>If those specific attributes are absent, DynamoDB does not replicate
+the item to the secondary index.</li>
+<li>The index only stores entries for items that explicitly define the
+indexed attributes.</li>
+</ol>
+<p>This behavior prevents unnecessary data replication, minimizes the
+storage footprint of the secondary index, and reduces the write
+throughput needed to maintain the index.</p>
+<h3 id="best-practices-for-storing-sparse-data">Best Practices for
+Storing Sparse Data</h3>
+<p>To maximize the efficiency of sparse attribute storage in DynamoDB,
+consider the following strategies:</p>
+<ul>
+<li><strong>Omit Absent Attributes Entirely:</strong> Rather than
+writing an attribute with a <code>null</code> or empty string value,
+simply omit the attribute key from the item when creating or updating
+it. Storing an attribute with a <code>null</code> value still consumes
+bytes for both the attribute name and the null data type marker.</li>
+<li><strong>Leverage Sparse Indexes for Filtering:</strong> Use sparse
+secondary indexes as query targets to retrieve only items that possess a
+specific status, flag, or attribute, avoiding full-table scans.</li>
+<li><strong>Keep Attribute Names Concise:</strong> Since attribute names
+are stored alongside their values in every item, using shorter attribute
+names reduces overall storage requirements, particularly across millions
+of sparse items.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-sparse-attribute-storage';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

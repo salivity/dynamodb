@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Query Empty Results with Filter Expressions - dynamodb</title>
+    <meta name="description" content="When querying Amazon DynamoDB, using a filter expression can frequently result in an empty list of items even when data matching the primary key exists. This article explains the two-step evaluation process of DynamoDB queries, why empty results still con">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-query-empty-results-with-filter-expressions">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Query Empty Results with Filter Expressions - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-query-empty-results-with-filter-expressions" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When querying Amazon DynamoDB, using a filter expression can frequently result in an empty list of items even when data matching the primary key exists. This article explains the two-step evaluation process of DynamoDB queries, why empty results still con" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-query-empty-results-with-filter-expressions">DynamoDB
+Query Empty Results with Filter Expressions</h1>
+<p>When querying Amazon DynamoDB, using a filter expression can
+frequently result in an empty list of items even when data matching the
+primary key exists. This article explains the two-step evaluation
+process of DynamoDB queries, why empty results still consume Read
+Capacity Units (RCUs), how pagination behaves when items are filtered
+out, and how to properly handle these responses in your application.</p>
+<h3 id="the-two-step-query-evaluation-process">The Two-Step Query
+Evaluation Process</h3>
+<p>To understand why DynamoDB returns empty results, you must understand
+how query requests are evaluated. DynamoDB processes queries in two
+distinct phases:</p>
+<ol type="1">
+<li><strong>Read Phase (Key Condition Expression):</strong> DynamoDB
+locates the partition key and optional sort key criteria specified in
+the <code>KeyConditionExpression</code>. It reads up to 1 MB of matching
+data from disk (or up to the specified <code>Limit</code>
+parameter).</li>
+<li><strong>Filter Phase (Filter Expression):</strong> DynamoDB takes
+the records read in step one and applies the
+<code>FilterExpression</code>. Attributes that do not match the filter
+criteria are discarded before the final response is constructed.</li>
+</ol>
+<p>If none of the records read during the first phase satisfy the
+<code>FilterExpression</code>, the resulting <code>Items</code> array in
+the response will be empty (<code>[]</code>).</p>
+<h3 id="metadata-indicators-scannedcount-vs-count">Metadata Indicators:
+ScannedCount vs. Count</h3>
+<p>When an empty result set occurs due to a filter expression, the API
+response contains metadata that explains what happened:</p>
+<ul>
+<li><strong><code>ScannedCount</code>:</strong> The number of items
+DynamoDB actually evaluated from storage based on your
+<code>KeyConditionExpression</code>. This number will be greater than
+zero.</li>
+<li><strong><code>Count</code>:</strong> The number of items remaining
+after the <code>FilterExpression</code> was applied. In this scenario,
+<code>Count</code> will be <code>0</code>.</li>
+</ul>
+<h3 id="capacity-unit-consumption">Capacity Unit Consumption</h3>
+<p>A common misconception is that an empty result set does not incur
+costs. In DynamoDB, consumed capacity is calculated based on the data
+evaluated, not the data returned.</p>
+<p>DynamoDB charges Read Capacity Units (RCUs) based on the total size
+of items processed during the Read Phase (<code>ScannedCount</code>),
+rounded up to the nearest 4 KB for strongly consistent reads (or 8 KB
+for eventually consistent reads). Even if your query returns zero items
+to the client, you are charged for every byte read prior to
+filtering.</p>
+<h3 id="handling-pagination-and-lastevaluatedkey">Handling Pagination
+and LastEvaluatedKey</h3>
+<p>The most critical consequence of this behavior involves pagination.
+If DynamoDB reaches its 1 MB read limit or hits the query's
+<code>Limit</code> threshold without finding any items that match your
+filter, it halts execution and returns an empty <code>Items</code> list
+along with a <code>LastEvaluatedKey</code>.</p>
+<p>An empty <code>Items</code> array does not mean there are no matching
+items remaining in the table. As long as <code>LastEvaluatedKey</code>
+is present in the response, your application must continue to make
+subsequent query requests, passing
+<code>ExclusiveStartKey = LastEvaluatedKey</code>, until:</p>
+<ol type="1">
+<li>Matching items are found, or</li>
+<li><code>LastEvaluatedKey</code> is null or undefined, signifying that
+the entire key space has been evaluated.</li>
+</ol>
+<p>Failing to loop through the pagination when <code>Items</code> is
+empty will cause your application to prematurely drop valid matching
+records.</p>
+<h3 id="how-to-avoid-empty-filter-results">How to Avoid Empty Filter
+Results</h3>
+<p>Relying heavily on filter expressions over large datasets is
+inefficient and increases latency. To avoid empty results and
+unnecessary read charges:</p>
+<ul>
+<li><strong>Use Sort Keys:</strong> Redesign your table schema so that
+frequently queried attributes are part of the composite primary
+key.</li>
+<li><strong>Create Global Secondary Indexes (GSIs):</strong> If you need
+to filter on non-key attributes across many items, create a GSI with the
+required attributes as the partition or sort key so DynamoDB can locate
+them during the initial Read Phase.</li>
+<li><strong>Sparse Indexes:</strong> Use GSIs that only project items
+containing the specific attribute you are filtering on, automatically
+excluding irrelevant records without read overhead.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-query-empty-results-with-filter-expressions';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

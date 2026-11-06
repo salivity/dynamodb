@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Cross-Account Access with IAM Roles - dynamodb</title>
+    <meta name="description" content="Enabling cross-account access to an Amazon DynamoDB table allows applications and users in one AWS account to securely read from or write to a table hosted in another account. This is accomplished by establishing an IAM role in the account that owns the D">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-cross-account-access-with-iam-roles">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Cross-Account Access with IAM Roles - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-cross-account-access-with-iam-roles" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Enabling cross-account access to an Amazon DynamoDB table allows applications and users in one AWS account to securely read from or write to a table hosted in another account. This is accomplished by establishing an IAM role in the account that owns the D" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-cross-account-access-with-iam-roles">DynamoDB
+Cross-Account Access with IAM Roles</h1>
+<p>Enabling cross-account access to an Amazon DynamoDB table allows
+applications and users in one AWS account to securely read from or write
+to a table hosted in another account. This is accomplished by
+establishing an IAM role in the account that owns the DynamoDB table,
+granting that role the necessary table-level permissions, and
+configuring its trust policy to permit an external AWS account to assume
+it. Using the AWS Security Token Service (STS), entities in the trusted
+account request temporary credentials to assume the role, enabling
+secure, credential-free cross-account delegation.</p>
+<h3 id="core-architecture-and-workflow">Core Architecture and
+Workflow</h3>
+<p>Cross-account access relies on two distinct AWS environments:</p>
+<ul>
+<li><strong>Account A (Resource Account):</strong> Owns the DynamoDB
+table and defines the IAM role.</li>
+<li><strong>Account B (Requesting Account):</strong> Contains the IAM
+user, application, Lambda function, or EC2 instance requiring access to
+Account A's DynamoDB table.</li>
+</ul>
+<p>The process functions through four fundamental stages:</p>
+<pre><code>[Account B: Identity] 
+       │ 
+       ▼ (1. Calls sts:AssumeRole)
+[AWS STS] 
+       │
+       ▼ (2. Issues Temporary Credentials)
+[Account B: Identity] 
+       │
+       ▼ (3. Executes DynamoDB APIs with Temporary Credentials)
+[Account A: DynamoDB Table]</code></pre>
+<hr />
+<h3 id="step-1-create-the-iam-role-in-account-a">Step 1: Create the IAM
+Role in Account A</h3>
+<p>Account A must host an IAM role that delegates access. This role
+requires two distinct policies: a <strong>Trust Policy</strong> and an
+<strong>Identity-based Permissions Policy</strong>.</p>
+<h4 id="1-the-trust-policy">1. The Trust Policy</h4>
+<p>The trust policy defines <em>who</em> is allowed to assume the role.
+It specifies Account B's root account ID (or a specific IAM principal
+within Account B) as the trusted entity.</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Version&quot;</span><span class="fu">:</span> <span class="st">&quot;2012-10-17&quot;</span><span class="fu">,</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Statement&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Effect&quot;</span><span class="fu">:</span> <span class="st">&quot;Allow&quot;</span><span class="fu">,</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Principal&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&quot;AWS&quot;</span><span class="fu">:</span> <span class="st">&quot;arn:aws:iam::ACCOUNT_B_ID:root&quot;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>      <span class="fu">},</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Action&quot;</span><span class="fu">:</span> <span class="st">&quot;sts:AssumeRole&quot;</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h4 id="2-the-permissions-policy">2. The Permissions Policy</h4>
+<p>Attached directly to the role, this policy determines <em>what
+actions</em> the role can execute against Account A's DynamoDB
+resources.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Version&quot;</span><span class="fu">:</span> <span class="st">&quot;2012-10-17&quot;</span><span class="fu">,</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Statement&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Effect&quot;</span><span class="fu">:</span> <span class="st">&quot;Allow&quot;</span><span class="fu">,</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Action&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:GetItem&quot;</span><span class="ot">,</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:PutItem&quot;</span><span class="ot">,</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:UpdateItem&quot;</span><span class="ot">,</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:Query&quot;</span><span class="ot">,</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:Scan&quot;</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Resource&quot;</span><span class="fu">:</span> <span class="st">&quot;arn:aws:dynamodb:REGION:ACCOUNT_A_ID:table/TargetTable&quot;</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h3 id="step-2-grant-assumerole-permissions-in-account-b">Step 2: Grant
+AssumeRole Permissions in Account B</h3>
+<p>By default, identities in Account B cannot assume roles in other
+accounts. An administrator in Account B must attach an inline or managed
+IAM policy to the specific user, group, or execution role (such as a
+Lambda execution role) that needs access.</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Version&quot;</span><span class="fu">:</span> <span class="st">&quot;2012-10-17&quot;</span><span class="fu">,</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Statement&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Effect&quot;</span><span class="fu">:</span> <span class="st">&quot;Allow&quot;</span><span class="fu">,</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Action&quot;</span><span class="fu">:</span> <span class="st">&quot;sts:AssumeRole&quot;</span><span class="fu">,</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Resource&quot;</span><span class="fu">:</span> <span class="st">&quot;arn:aws:iam::ACCOUNT_A_ID:role/RoleNameInAccountA&quot;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<hr />
+<h3 id="step-3-assume-the-role-using-aws-sts">Step 3: Assume the Role
+Using AWS STS</h3>
+<p>The client application running in Account B uses the AWS SDK or CLI
+to call the STS <code>AssumeRole</code> API endpoint.</p>
+<p>When invoking <code>AssumeRole</code>, the client provides:</p>
+<ul>
+<li>The Amazon Resource Name (ARN) of the role in Account A
+(<code>RoleArn</code>).</li>
+<li>A custom identifier for the session
+(<code>RoleSessionName</code>).</li>
+<li>An optional external ID (<code>ExternalId</code>) to mitigate the
+confused deputy problem if third-party access is involved.</li>
+</ul>
+<p>AWS STS returns a set of temporary security credentials
+comprising:</p>
+<ul>
+<li><strong>AccessKeyId</strong></li>
+<li><strong>SecretAccessKey</strong></li>
+<li><strong>SessionToken</strong></li>
+<li><strong>Expiration Timestamp</strong></li>
+</ul>
+<hr />
+<h3 id="step-4-access-dynamodb-using-the-temporary-credentials">Step 4:
+Access DynamoDB Using the Temporary Credentials</h3>
+<p>The application in Account B instantiates a new DynamoDB client using
+the temporary credentials provided by STS instead of its local
+credentials. All subsequent API calls (<code>GetItem</code>,
+<code>PutItem</code>, etc.) made by this client are signed with the
+temporary credentials, evaluate against the permissions policy assigned
+to Account A's role, and successfully execute against Account A's
+DynamoDB table.</p>
+<h3 id="key-considerations">Key Considerations</h3>
+<ul>
+<li><strong>Resource-Based Policies vs. IAM Roles:</strong> While
+DynamoDB supports resource-based policies for direct cross-account
+access without assuming a role, cross-account IAM roles remain the
+standard architecture when centralized credential rotation,
+cross-account auditing, or strict session duration limits are
+required.</li>
+<li><strong>Session Durations:</strong> STS session durations range from
+15 minutes to 12 hours. Applications must refresh or renew expired
+credentials to prevent API authorization failures.</li>
+<li><strong>Service Control Policies (SCPs):</strong> If either account
+is part of an AWS Organization, ensure that an SCP does not explicitly
+deny <code>sts:AssumeRole</code> or DynamoDB actions across account
+boundaries.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-cross-account-access-with-iam-roles';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

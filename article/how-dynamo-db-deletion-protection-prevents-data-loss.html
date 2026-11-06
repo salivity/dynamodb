@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Deletion Protection Prevents Data Loss - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB offers a built-in deletion protection property designed to safeguard production databases from unintended or unauthorized removal. When deletion protection is enabled, DynamoDB rejects any delete request targeting the table—whether initiat">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-deletion-protection-prevents-data-loss">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Deletion Protection Prevents Data Loss - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-deletion-protection-prevents-data-loss" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB offers a built-in deletion protection property designed to safeguard production databases from unintended or unauthorized removal. When deletion protection is enabled, DynamoDB rejects any delete request targeting the table—whether initiat" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-deletion-protection-prevents-data-loss">How
+DynamoDB Deletion Protection Prevents Data Loss</h1>
+<p>Amazon DynamoDB offers a built-in deletion protection property
+designed to safeguard production databases from unintended or
+unauthorized removal. When deletion protection is enabled, DynamoDB
+rejects any delete request targeting the table—whether initiated through
+the AWS Management Console, the Command Line Interface (CLI), AWS
+CloudFormation, or the DynamoDB API. This article covers how this
+protection mechanism operates, how it blocks deletion requests, and how
+it fits into broader data resilience strategies.</p>
+<h3 id="how-the-protection-mechanism-operates">How the Protection
+Mechanism Operates</h3>
+<p>DynamoDB manages deletion safety via a table-level boolean setting
+called <code>DeletionProtectionEnabled</code>. By default, this property
+is set to disabled when creating a new table unless explicitly specified
+otherwise.</p>
+<p>When <code>DeletionProtectionEnabled</code> is set to
+<code>true</code>, the DynamoDB control plane intercepts any
+<code>DeleteTable</code> API call and immediately denies the operation.
+The service returns a <code>ResourceInUseException</code> or validation
+error stating that the table cannot be deleted because deletion
+protection is active. This behavior applies uniformly across all access
+paths:</p>
+<ul>
+<li><strong>AWS Management Console:</strong> The option to delete the
+table is disabled in the interface, requiring an administrator to
+manually update the table settings before a delete action can
+proceed.</li>
+<li><strong>AWS CLI and SDKs:</strong> Programmatic scripts, continuous
+deployment pipelines, or ad-hoc CLI commands executing
+<code>DeleteTable</code> will fail, halting execution before any state
+change occurs.</li>
+<li><strong>Infrastructure as Code (IaC):</strong> If an engineer
+deletes an AWS CloudFormation stack or a Terraform resource that defines
+the protected table, the deployment fails, preventing IaC automation
+from tearing down live data stores.</li>
+</ul>
+<h3 id="configuring-deletion-protection">Configuring Deletion
+Protection</h3>
+<p>Deletion protection can be managed throughout the table's lifecycle
+without downtime.</p>
+<ul>
+<li><strong>During Creation:</strong> Administrators can define the
+parameter directly within CloudFormation templates, Terraform
+configurations, or the <code>CreateTable</code> API by passing
+<code>--deletion-protection-enabled</code>.</li>
+<li><strong>On Existing Tables:</strong> The setting can be toggled at
+any time using the <code>UpdateTable</code> API call or via the
+"Additional settings" tab in the DynamoDB console. Modifying this
+setting does not interrupt regular read and write operations.</li>
+</ul>
+<p>To actually delete a protected table, a user must follow a two-step
+process: first, modify the table settings to set
+<code>DeletionProtectionEnabled</code> to <code>false</code>, and
+second, execute the <code>DeleteTable</code> command.</p>
+<h3 id="access-control-and-iam-enforcement">Access Control and IAM
+Enforcement</h3>
+<p>To prevent malicious actors or automated tools from simply disabling
+the setting prior to deletion, AWS Identity and Access Management (IAM)
+controls can restrict who can alter the flag. Organizations can enforce
+safety by creating IAM policies that deny the
+<code>dynamodb:UpdateTable</code> action specifically when altering
+deletion protection, or by restricting the action to privileged
+administrative roles.</p>
+<h3 id="role-in-a-defense-in-depth-strategy">Role in a Defense-in-Depth
+Strategy</h3>
+<p>While deletion protection provides an immediate barrier against
+destructive actions, it is typically implemented alongside other native
+DynamoDB resilience features:</p>
+<ul>
+<li><strong>Point-In-Time Recovery (PITR):</strong> Provides continuous
+backups to protect against application-level data corruption or
+accidental item-level deletions, which deletion protection does not
+cover.</li>
+<li><strong>On-Demand Backups:</strong> Creates durable, long-term
+snapshot archives independent of the live table.</li>
+<li><strong>Service Control Policies (SCPs):</strong> Within AWS
+Organizations, SCPs can establish organization-wide guardrails to deny
+<code>dynamodb:DeleteTable</code> across all accounts regardless of
+local IAM configurations.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-deletion-protection-prevents-data-loss';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

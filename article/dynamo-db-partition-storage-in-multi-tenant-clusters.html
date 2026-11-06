@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Storage in Multi-Tenant Clusters - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages partition storage capacity across its multi-tenant architecture by isolating data into distinct, fixed-capacity logical partitions distributed across shared physical storage nodes. While tenants share underlying hardware, DynamoDB">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-storage-in-multi-tenant-clusters">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Storage in Multi-Tenant Clusters - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-storage-in-multi-tenant-clusters" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages partition storage capacity across its multi-tenant architecture by isolating data into distinct, fixed-capacity logical partitions distributed across shared physical storage nodes. While tenants share underlying hardware, DynamoDB" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-storage-in-multi-tenant-clusters">DynamoDB
+Partition Storage in Multi-Tenant Clusters</h1>
+<p>Amazon DynamoDB manages partition storage capacity across its
+multi-tenant architecture by isolating data into distinct,
+fixed-capacity logical partitions distributed across shared physical
+storage nodes. While tenants share underlying hardware, DynamoDB
+strictly limits each individual partition to a maximum of 10 GB of data
+to ensure high availability, fast repair times, and consistent I/O
+performance. DynamoDB computes this capacity via continuous item-level
+metering on local partition replicas and automatically prevents node
+exhaustion through dynamic partition splitting and autonomous cluster
+rebalancing.</p>
+<h3 id="logical-partitions-and-multi-tenant-storage-nodes">Logical
+Partitions and Multi-Tenant Storage Nodes</h3>
+<p>In DynamoDB, a table's data is divided into logical partitions based
+on partition key hash values. Each logical partition is maintained as a
+three-node replication group using the Paxos consensus algorithm across
+multiple Availability Zones.</p>
+<p>Physical storage nodes host these partition replicas in a
+multi-tenant layout. A single physical machine runs a proprietary
+storage engine (historically based on specialized storage systems like
+B-trees and, more recently, optimized log-structured merge engines)
+hosting hundreds or thousands of partition replicas belonging to
+completely different AWS customer accounts. Multi-tenancy operates
+strictly at the physical layer, while logical boundaries are maintained
+per partition.</p>
+<h3 id="how-storage-capacity-is-computed">How Storage Capacity Is
+Computed</h3>
+<p>DynamoDB calculates storage consumption at the item level in real
+time. The storage size of a partition is the aggregate byte count of all
+its items, calculated as:</p>
+<ul>
+<li><strong>Attribute Names:</strong> The length of each attribute name
+in UTF-8 bytes.</li>
+<li><strong>Attribute Values:</strong> The raw binary, string (UTF-8
+bytes), numeric, or set data sizes.</li>
+<li><strong>Per-Item Overhead:</strong> An internal overhead allocation
+(typically around 100 bytes per item) to account for indexing, system
+metadata, and document structure tracking.</li>
+</ul>
+<p>Every write, update, and delete operation executed via Paxos
+evaluates this byte delta. The leader replica of the partition maintains
+an ongoing local counter of total stored bytes. Because deletions and
+overwrites can introduce internal fragmentation, DynamoDB's local
+storage engine tracks actual user data footprints rather than raw
+disk-block allocation when calculating against tenant storage
+quotas.</p>
+<h3 id="the-10-gb-boundary-enforcement">The 10 GB Boundary
+Enforcement</h3>
+<p>DynamoDB enforces an architectural limit of 10 GB per individual
+partition. This ceiling is selected to ensure that operational
+tasks—such as rebuilding a failed replica across the network, taking
+automated backups, or migrating data—can be completed in minutes rather
+than hours.</p>
+<p>Storage capacity enforcement does not simply reject writes once 10 GB
+is reached. Instead:</p>
+<ol type="1">
+<li><strong>Monitoring Thresholds:</strong> As a partition's computed
+storage size approaches capacity (typically triggered once it crosses
+safe internal thresholds near 10 GB), an automated management event is
+generated by the partition manager.</li>
+<li><strong>Partition Splitting:</strong> The partition splits into two
+new partitions. DynamoDB calculates a new midpoint in the partition key
+hash space, dividing the data roughly in half.</li>
+<li><strong>Replica Relocation:</strong> The newly formed partitions can
+remain on the existing physical storage nodes or be migrated to new
+physical nodes elsewhere in the cluster to prevent localized disk
+saturation.</li>
+</ol>
+<p>If an individual item collection (items sharing the exact same
+partition key in a table with a Local Secondary Index) reaches 10 GB, it
+cannot be split across partitions. In this specific scenario, DynamoDB
+will reject additional writes to that specific partition key with an
+<code>ItemCollectionSizeLimitExceededException</code>.</p>
+<h3 id="cluster-level-multi-tenant-capacity-management">Cluster-Level
+Multi-Tenant Capacity Management</h3>
+<p>Because multiple tenants share disk space on the same physical
+storage nodes, overall drive utilization is managed independently of
+individual partition limits:</p>
+<ul>
+<li><strong>Proportional Placement:</strong> DynamoDB’s global request
+router and fleet placement systems evaluate physical node disk
+utilization before assigning new partition replicas.</li>
+<li><strong>Anti-Noisy-Neighbor Rebalancing:</strong> If multiple
+tenants on the same physical drive experience rapid, aggregate data
+growth, background fleet management services automatically migrate
+partition replicas to less-utilized storage nodes without downtime or
+performance degradation.</li>
+<li><strong>Storage vs. Throughput Decoupling:</strong> Storage capacity
+calculations are decoupled from provisioned or on-demand throughput
+calculations. A partition split triggered by hitting the 10 GB storage
+threshold reallocates data, resets the 10 GB ceiling for the two new
+child partitions, and redistributes allocated throughput across the new
+hash ranges.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-storage-in-multi-tenant-clusters';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

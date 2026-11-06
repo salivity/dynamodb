@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Handles Auto Scaling Traffic Spikes - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB relies on Application Auto Scaling to adjust provisioned throughput dynamically based on workload demands. However, because standard auto scaling depends on Amazon CloudWatch metrics that require several minutes to trigger, sudden and dram">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-auto-scaling-traffic-spikes">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Handles Auto Scaling Traffic Spikes - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-auto-scaling-traffic-spikes" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB relies on Application Auto Scaling to adjust provisioned throughput dynamically based on workload demands. However, because standard auto scaling depends on Amazon CloudWatch metrics that require several minutes to trigger, sudden and dram" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-handles-auto-scaling-traffic-spikes">How DynamoDB
+Handles Auto Scaling Traffic Spikes</h1>
+<p>Amazon DynamoDB relies on Application Auto Scaling to adjust
+provisioned throughput dynamically based on workload demands. However,
+because standard auto scaling depends on Amazon CloudWatch metrics that
+require several minutes to trigger, sudden and dramatic traffic spikes
+can outpace scaling events and lead to request throttling. This article
+explains how DynamoDB manages auto scaling latency, the limitations of
+its reactive scaling engine, the built-in mechanisms designed to cushion
+rapid traffic surges, and the architectural strategies required to
+prevent latency degradation.</p>
+<h2 id="the-auto-scaling-latency-challenge">The Auto Scaling Latency
+Challenge</h2>
+<p>DynamoDB Provisioned Capacity mode with auto scaling operates using
+CloudWatch alarms to track consumed capacity against a user-defined
+target utilization percentage (typically 70%). When traffic spikes
+abruptly, the auto scaling mechanism does not react instantaneously:</p>
+<ol type="1">
+<li><strong>Metric Aggregation:</strong> CloudWatch collects and
+aggregates consumed capacity metrics at one-minute intervals.</li>
+<li><strong>Alarm Evaluation:</strong> The scaling policy typically
+requires consecutive metric evaluations (often spanning two to fifteen
+minutes) above the target threshold before sounding an alarm to avoid
+erratic scaling actions.</li>
+<li><strong>Capacity Update:</strong> Once triggered, DynamoDB calls the
+<code>UpdateTable</code> API to provision additional Read Capacity Units
+(RCUs) or Write Capacity Units (WCUs).</li>
+</ol>
+<p>During this multi-minute evaluation and provisioning window, if
+incoming traffic exceeds both the provisioned baseline and short-term
+buffers, DynamoDB throttles requests, returning
+<code>ProvisionedThroughputExceededException</code> errors to the client
+application and increasing end-to-end latency via client-side
+retries.</p>
+<h2 id="built-in-buffers-against-sudden-spikes">Built-In Buffers Against
+Sudden Spikes</h2>
+<p>To mitigate throttling while scaling takes place, DynamoDB provides
+two internal features:</p>
+<h3 id="1-burst-capacity">1. Burst Capacity</h3>
+<p>DynamoDB retains up to 300 seconds (5 minutes) of unused read and
+write capacity to absorb unexpected traffic surges. If a table operates
+below its provisioned capacity, the unused units are stored in a burst
+pool. When a spike occurs, DynamoDB consumes these burst credits to
+process requests above the provisioned limit. However, burst capacity is
+finite; if the traffic spike persists longer than the accumulated burst
+pool allows, requests will be throttled until auto scaling provisions
+more units.</p>
+<h3 id="2-adaptive-capacity">2. Adaptive Capacity</h3>
+<p>Workloads often direct sudden spikes toward specific partitions
+(creating "hot partitions"). DynamoDB's adaptive capacity automatically
+reallocates unused throughput from quiet partitions to high-demand
+partitions. While adaptive capacity prevents throttling caused by
+imbalanced key distributions, it cannot exceed the table's total
+provisioned capacity.</p>
+<h2
+id="architectural-strategies-to-overcome-auto-scaling-latency">Architectural
+Strategies to Overcome Auto Scaling Latency</h2>
+<p>Because standard auto scaling is inherently reactive, critical
+workloads requiring predictable, low-latency performance during traffic
+surges require specific design choices.</p>
+<h3 id="switch-to-on-demand-capacity-mode">Switch to On-Demand Capacity
+Mode</h3>
+<p>DynamoDB On-Demand capacity is designed explicitly for unpredictable
+workloads. Instead of relying on CloudWatch alarms to scale, on-demand
+tables accommodate up to double the previous peak traffic instantly. If
+a table previously reached 10,000 write units, it can instantly serve
+20,000 write units without any provisioning lag or throttling.</p>
+<h3 id="implement-request-queuing">Implement Request Queuing</h3>
+<p>For write-heavy applications that can tolerate asynchronous
+processing, placing a message queue like Amazon Simple Queue Service
+(SQS) in front of DynamoDB decouples the application layer from the
+database layer. The queue absorbs immediate traffic spikes, allowing
+workers to write to DynamoDB at a steady, pre-provisioned rate that
+stays within provisioned limits.</p>
+<h3 id="use-in-memory-caching-dynamodb-accelerator---dax">Use In-Memory
+Caching (DynamoDB Accelerator - DAX)</h3>
+<p>For read-heavy spikes, DynamoDB Accelerator (DAX) or Amazon
+ElastiCache provides microsecond read latencies and shields the
+underlying DynamoDB table from the surge entirely. Read requests are
+satisfied in-memory, preventing consumed read units on the table from
+triggering throttling.</p>
+<h3 id="scheduled-scaling-and-pre-warming">Scheduled Scaling and
+Pre-Warming</h3>
+<p>When sudden traffic spikes are anticipated (such as ticket sales,
+product launches, or scheduled batch jobs), relying on reactive auto
+scaling is suboptimal. Teams should configure scheduled scaling policies
+or manually increase provisioned capacity ahead of the event to ensure
+that the required partitions and throughput are fully active before the
+traffic arrives.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-auto-scaling-traffic-spikes';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

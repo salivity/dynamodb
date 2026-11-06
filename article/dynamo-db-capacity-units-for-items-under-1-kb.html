@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Capacity Units for Items Under 1 KB - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provisions and bills throughput using Read Capacity Units (RCUs) and Write Capacity Units (WCUs). This article explains how DynamoDB meters capacity units specifically for items smaller than one kilobyte (1 KB), breaking down the base calc">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-capacity-units-for-items-under-1-kb">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Capacity Units for Items Under 1 KB - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-capacity-units-for-items-under-1-kb" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provisions and bills throughput using Read Capacity Units (RCUs) and Write Capacity Units (WCUs). This article explains how DynamoDB meters capacity units specifically for items smaller than one kilobyte (1 KB), breaking down the base calc" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-capacity-units-for-items-under-1-kb">DynamoDB Capacity
+Units for Items Under 1 KB</h1>
+<p>Amazon DynamoDB provisions and bills throughput using Read Capacity
+Units (RCUs) and Write Capacity Units (WCUs). This article explains how
+DynamoDB meters capacity units specifically for items smaller than one
+kilobyte (1 KB), breaking down the base calculation rules, the role of
+read consistency models, and the cost implications for small data
+payloads.</p>
+<h3 id="write-capacity-units-wcus-for-items-under-1-kb">Write Capacity
+Units (WCUs) for Items Under 1 KB</h3>
+<p>For write operations, DynamoDB measures throughput in 1 KB
+increments. One WCU provides one standard write per second for an item
+up to 1 KB in size.</p>
+<p>When you write an item smaller than 1 KB:</p>
+<ul>
+<li>DynamoDB automatically rounds the item size up to the nearest 1 KB
+increment.</li>
+<li>An item of 100 bytes, 500 bytes, or 900 bytes is evaluated as a full
+1 KB item.</li>
+<li>As a result, writing any item smaller than 1 KB consumes exactly
+<strong>1 WCU</strong> for a standard write (such as
+<code>PutItem</code>, <code>UpdateItem</code>, or
+<code>DeleteItem</code>).</li>
+<li>If you perform a transactional write
+(<code>TransactWriteItems</code>), the consumption doubles, requiring
+<strong>2 WCUs</strong> for any item up to 1 KB.</li>
+</ul>
+<h3 id="read-capacity-units-rcus-for-items-under-1-kb">Read Capacity
+Units (RCUs) for Items Under 1 KB</h3>
+<p>Read operations are measured in 4 KB increments rather than 1 KB
+increments. One standard RCU provides one strongly consistent read per
+second for an item up to 4 KB.</p>
+<p>Because an item smaller than 1 KB falls well below the 4 KB
+threshold, DynamoDB treats it as occupying the base 4 KB tier. The exact
+capacity consumed depends on the consistency model requested:</p>
+<ul>
+<li><strong>Eventually Consistent Reads:</strong> Consumes <strong>0.5
+RCU</strong>. Since one RCU supports two eventually consistent reads of
+up to 4 KB each, reading an item under 1 KB costs half a unit.</li>
+<li><strong>Strongly Consistent Reads:</strong> Consumes <strong>1
+RCU</strong>. Reading an item up to 4 KB with strong consistency
+requires one full unit.</li>
+<li><strong>Transactional Reads:</strong> Consumes <strong>2
+RCUs</strong>. Transactional read requests
+(<code>TransactGetItems</code>) require double the capacity of a
+strongly consistent read.</li>
+</ul>
+<h3 id="batch-operations-and-small-items">Batch Operations and Small
+Items</h3>
+<p>DynamoDB calculates capacity per item, not across the aggregate
+payload size of a batch:</p>
+<ul>
+<li><strong>BatchWriteItem:</strong> Each item in the batch smaller than
+1 KB is rounded individually to 1 KB. For example, writing ten 200-byte
+items consumes 10 WCUs, not 2 WCUs.</li>
+<li><strong>BatchGetItem:</strong> Each item retrieved is rounded
+individually to the 4 KB boundary. Fetching ten 500-byte items using
+strongly consistent reads consumes 10 RCUs.</li>
+</ul>
+<h3 id="key-takeaway">Key Takeaway</h3>
+<p>DynamoDB does not offer fractional write capacity for items smaller
+than 1 KB; every write operation under 1,024 bytes consumes a minimum of
+1 WCU (or 2 WCUs for transactions). For reads, items smaller than 1 KB
+are grouped into the baseline 4 KB bracket, consuming 0.5 RCU for
+eventual consistency or 1 RCU for strong consistency.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-capacity-units-for-items-under-1-kb';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

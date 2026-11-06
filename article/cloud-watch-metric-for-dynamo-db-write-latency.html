@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudWatch Metric for DynamoDB Write Latency - dynamodb</title>
+    <meta name="description" content="Monitoring write performance in Amazon DynamoDB is essential for ensuring application responsiveness and diagnosing performance bottlenecks. Amazon CloudWatch tracks this performance using the SuccessfulRequestLatency metric filtered by specific write ope">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/cloud-watch-metric-for-dynamo-db-write-latency">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="CloudWatch Metric for DynamoDB Write Latency - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/cloud-watch-metric-for-dynamo-db-write-latency" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Monitoring write performance in Amazon DynamoDB is essential for ensuring application responsiveness and diagnosing performance bottlenecks. Amazon CloudWatch tracks this performance using the SuccessfulRequestLatency metric filtered by specific write ope" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="cloudwatch-metric-for-dynamodb-write-latency">CloudWatch Metric
+for DynamoDB Write Latency</h1>
+<p>Monitoring write performance in Amazon DynamoDB is essential for
+ensuring application responsiveness and diagnosing performance
+bottlenecks. Amazon CloudWatch tracks this performance using the
+<code>SuccessfulRequestLatency</code> metric filtered by specific write
+operations. This article explains how
+<code>SuccessfulRequestLatency</code> works, how to isolate write
+operations, and how to effectively monitor and interpret DynamoDB write
+latency data.</p>
+<h3 id="the-primary-metric-successfulrequestlatency">The Primary Metric:
+SuccessfulRequestLatency</h3>
+<p>The primary CloudWatch metric used to monitor the time latency of
+DynamoDB write operations is
+<strong><code>SuccessfulRequestLatency</code></strong>.</p>
+<p>This metric measures the time, in milliseconds, that DynamoDB takes
+to successfully respond to a request. Because
+<code>SuccessfulRequestLatency</code> captures all request types across
+your database, you must filter the metric using CloudWatch dimensions to
+isolate write actions.</p>
+<h3 id="filtering-by-write-operations">Filtering by Write
+Operations</h3>
+<p>To view only write latency, combine the
+<code>SuccessfulRequestLatency</code> metric with the following
+dimensions:</p>
+<ul>
+<li><strong>TableName</strong>: Specifies the DynamoDB table you are
+evaluating.</li>
+<li><strong>Operation</strong>: Defines the API call executed. For write
+activity, select write-specific operations, including:
+<ul>
+<li><code>PutItem</code></li>
+<li><code>UpdateItem</code></li>
+<li><code>DeleteItem</code></li>
+<li><code>BatchWriteItem</code></li>
+<li><code>TransactWriteItems</code></li>
+</ul></li>
+</ul>
+<p>Filtering by <code>Operation</code> allows you to see the exact
+latency for individual write APIs rather than an aggregate of both read
+and write traffic.</p>
+<h3 id="recommended-statistics-for-monitoring">Recommended Statistics
+for Monitoring</h3>
+<p>When analyzing write latency in CloudWatch, using the appropriate
+statistic is critical for accurate performance analysis:</p>
+<ul>
+<li><strong>Average</strong>: Provides a general baseline for standard
+operation latency over time.</li>
+<li><strong>p95 and p99 (Percentiles)</strong>: Most recommended for
+identifying outliers and tail latency. Averages often mask intermittent
+latency spikes caused by hot partitions, large item sizes, or
+provisioned throughput throttling.</li>
+</ul>
+<h3 id="service-latency-vs-client-side-latency">Service Latency vs.
+Client-Side Latency</h3>
+<p><code>SuccessfulRequestLatency</code> measures only the time spent
+processing the request inside DynamoDB. It does not include:</p>
+<ul>
+<li>Network round-trip time between your application and DynamoDB.</li>
+<li>Request queuing within client SDKs.</li>
+<li>DNS resolution times.</li>
+</ul>
+<p>If your application reports high write latency while the CloudWatch
+<code>SuccessfulRequestLatency</code> metric remains low, the delay is
+occurring outside of the DynamoDB service itself, such as in the network
+path, client-side resource exhaustion, or SDK connection pool
+settings.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/cloud-watch-metric-for-dynamo-db-write-latency';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

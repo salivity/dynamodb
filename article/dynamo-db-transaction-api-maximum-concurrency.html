@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Transaction API Maximum Concurrency - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages maximum concurrency for transactional operations through a coordinated two-phase commit mechanism paired with optimistic concurrency control. Rather than maintaining long-lived locks across distributed partitions, DynamoDB validate">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-api-maximum-concurrency">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Transaction API Maximum Concurrency - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-api-maximum-concurrency" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages maximum concurrency for transactional operations through a coordinated two-phase commit mechanism paired with optimistic concurrency control. Rather than maintaining long-lived locks across distributed partitions, DynamoDB validate" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-transaction-api-maximum-concurrency">DynamoDB
+Transaction API Maximum Concurrency</h1>
+<p>Amazon DynamoDB manages maximum concurrency for transactional
+operations through a coordinated two-phase commit mechanism paired with
+optimistic concurrency control. Rather than maintaining long-lived locks
+across distributed partitions, DynamoDB validates pre-conditions,
+isolates modified items, and checks for concurrent modifications at
+execution time. Understanding this architecture—including how DynamoDB
+handles conflict detection, capacity consumption, and partition-level
+constraints—is essential for designing systems that avoid transaction
+rejections under heavy concurrent workloads.</p>
+<h3 id="the-two-phase-commit-protocol">The Two-Phase Commit
+Protocol</h3>
+<p>DynamoDB uses an internal, coordinated two-phase commit (2PC)
+protocol to execute <code>TransactWriteItems</code> and
+<code>TransactGetItems</code> across multiple items and partitions.</p>
+<ol type="1">
+<li><strong>Phase 1 (Preparation and Validation):</strong> The
+transaction coordinator checks all pre-conditions, verifies that
+individual items have not changed, and confirms that read/write capacity
+units are available. DynamoDB reserves the items to prevent other
+transactional modifications.</li>
+<li><strong>Phase 2 (Commit and Apply):</strong> If all operations pass
+validation, the coordinator applies the changes atomically across all
+target partitions. If any single condition check fails or an item
+changes during Phase 1, the entire transaction rolls back.</li>
+</ol>
+<p>Because transactions are coordinated globally across partitions,
+latency is slightly higher than standard single-item operations, which
+naturally shapes how concurrency behaves across high-throughput
+workloads.</p>
+<h3 id="optimistic-concurrency-control-and-conflict-handling">Optimistic
+Concurrency Control and Conflict Handling</h3>
+<p>DynamoDB relies on optimistic concurrency control (OCC) instead of
+pessimistic row locking. If multiple concurrent operations—whether
+transactional or standard writes—attempt to update the same item
+simultaneously, DynamoDB detects the collision and rejects the competing
+transaction with a <code>TransactionConflictException</code>.</p>
+<p>The service does not automatically queue or retry conflicted
+transactions. Maximum concurrency is therefore dictated by how
+aggressively the client application handles retries. To maintain high
+throughput under contention, applications must implement exponential
+backoff with full jitter to distribute retried transactions over time
+and avoid "thundering herd" bottlenecks.</p>
+<h3 id="capacity-double-metering-impact">Capacity Double-Metering
+Impact</h3>
+<p>Transactional operations consume double the Read Capacity Units
+(RCUs) and Write Capacity Units (WCUs) of standard operations:</p>
+<ul>
+<li><strong>Transactional Read:</strong> Consumes 2 RCUs per 4 KB of
+data.</li>
+<li><strong>Transactional Write:</strong> Consumes 2 WCUs per 1 KB of
+data.</li>
+</ul>
+<p>Because each physical partition in DynamoDB supports a maximum of
+1,000 WCUs or 3,000 RCUs per second, a single partition can only handle
+a maximum of 500 transactional writes or 1,500 transactional reads per
+second. Concurrency caps are fundamentally constrained by these
+partition throughput limits. If concurrent transactional API calls
+exceed the provisioned or burst capacity of a single partition, DynamoDB
+rejects the calls with a
+<code>ProvisionedThroughputExceededException</code>.</p>
+<h3 id="transaction-sizing-and-item-constraints">Transaction Sizing and
+Item Constraints</h3>
+<p>DynamoDB imposes limits on transactional requests that limit
+aggregate concurrency:</p>
+<ul>
+<li>A single transaction can contain a maximum of 100 items or up to 4
+MB of total payload.</li>
+<li>Multiple operations cannot target the same item within the same
+transaction.</li>
+</ul>
+<p>When designing for maximum concurrency across multiple transactions,
+items should be spread uniformly across the keyspace. If multiple
+concurrent transactions access overlapping sets of keys, the likelihood
+of conflict increases exponentially, drastically reducing effective
+transactional throughput.</p>
+<h3 id="maintaining-high-concurrency-in-practice">Maintaining High
+Concurrency in Practice</h3>
+<p>To achieve peak concurrency with DynamoDB transactional APIs:</p>
+<ul>
+<li><strong>Use High-Cardinality Partition Keys:</strong> Distribute
+transactional items across as many distinct physical partitions as
+possible to avoid hitting the 1,000 WCU partition ceiling.</li>
+<li><strong>Pass Client Request Tokens:</strong> Use the
+<code>ClientRequestToken</code> parameter with
+<code>TransactWriteItems</code> to guarantee idempotency. This ensures
+that network timeouts or rapid retries do not execute duplicate
+operations or cause false conflict errors.</li>
+<li><strong>Keep Transactions Lean:</strong> Minimize the number of
+operations per transaction. Transactions with fewer items lock fewer
+resources during the two-phase commit, reducing the window of time for a
+<code>TransactionConflictException</code> to occur.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-transaction-api-maximum-concurrency';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

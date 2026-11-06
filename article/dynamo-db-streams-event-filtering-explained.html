@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Streams Event Filtering Explained - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Streams captures item-level modifications in near real-time, but processing every insert, update, and delete can lead to unnecessary consumer invocations and increased operational costs. This article explains how AWS Lambda Event Source Fi">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-streams-event-filtering-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Streams Event Filtering Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-streams-event-filtering-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Streams captures item-level modifications in near real-time, but processing every insert, update, and delete can lead to unnecessary consumer invocations and increased operational costs. This article explains how AWS Lambda Event Source Fi" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-streams-event-filtering-explained">DynamoDB Streams
+Event Filtering Explained</h1>
+<p>Amazon DynamoDB Streams captures item-level modifications in near
+real-time, but processing every insert, update, and delete can lead to
+unnecessary consumer invocations and increased operational costs. This
+article explains how AWS Lambda Event Source Filtering allows you to
+filter DynamoDB stream records natively before they trigger downstream
+consumers, eliminating the need to write custom filtering logic inside
+your application code.</p>
+<h2 id="the-feature-aws-lambda-event-source-filtering">The Feature: AWS
+Lambda Event Source Filtering</h2>
+<p>The capability that enables filtering DynamoDB change streams before
+invoking downstream consumers is AWS Lambda's <strong>Event Source
+Mapping Filter Criteria</strong>.</p>
+<p>When using Amazon DynamoDB Streams as an event source for AWS Lambda,
+this feature applies filter criteria directly at the stream poller
+level. If an incoming record does not match the predefined filter rules,
+Lambda drops the record immediately without invoking your Lambda
+function.</p>
+<h2 id="how-it-works">How It Works</h2>
+<p>DynamoDB Streams records all data modifications (<code>INSERT</code>,
+<code>MODIFY</code>, and <code>REMOVE</code>) and serializes them into
+JSON payloads containing the event metadata, <code>Keys</code>,
+<code>OldImage</code>, and <code>NewImage</code>.</p>
+<p>Lambda's event filtering evaluates these JSON payloads against up to
+five filter criteria defined on the event source mapping. Each criteria
+uses JSON rule syntax to match patterns such as:</p>
+<ul>
+<li><strong>Event Type:</strong> Triggering consumers only on
+<code>INSERT</code> or <code>REMOVE</code> events, while ignoring
+<code>MODIFY</code>.</li>
+<li><strong>Attribute Values:</strong> Triggering consumers only when a
+specific attribute matches a condition (for example, when an order's
+<code>Status</code> changes to <code>COMPLETED</code>).</li>
+<li><strong>Numeric and String Comparisons:</strong> Matching prefixes,
+exact values, existence of attributes, or numeric ranges within the
+DynamoDB stream record.</li>
+</ul>
+<p>Because filtering occurs in the event source mapping layer,
+non-matching records do not count toward your Lambda invocation metrics,
+concurrency limits, or execution costs.</p>
+<h2 id="benefits-of-native-stream-filtering">Benefits of Native Stream
+Filtering</h2>
+<ul>
+<li><strong>Cost Optimization:</strong> You avoid paying for Lambda
+invocations that immediately exit because the incoming record is not
+actionable.</li>
+<li><strong>Reduced Concurrency Pressure:</strong> High-throughput
+tables will not exhaust your downstream Lambda concurrency limits with
+irrelevant events.</li>
+<li><strong>Simplified Consumer Code:</strong> Developers no longer need
+boilerplate logic at the start of a function to inspect records and exit
+early.</li>
+<li><strong>Lower Operational Latency:</strong> Downstream systems only
+process relevant messages, reducing execution queues and pipeline
+backlog.</li>
+</ul>
+<h2 id="implementation-example">Implementation Example</h2>
+<p>You can configure filter criteria using the AWS Management Console,
+AWS CLI, AWS CloudFormation, or AWS CDK.</p>
+<p>A sample filter pattern to process only <code>INSERT</code> events
+where a status attribute equals <code>PENDING</code> looks like
+this:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Filters&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Pattern&quot;</span><span class="fu">:</span> <span class="st">&quot;{ </span><span class="ch">\&quot;</span><span class="st">eventName</span><span class="ch">\&quot;</span><span class="st">: [</span><span class="ch">\&quot;</span><span class="st">INSERT</span><span class="ch">\&quot;</span><span class="st">], </span><span class="ch">\&quot;</span><span class="st">dynamodb</span><span class="ch">\&quot;</span><span class="st">: { </span><span class="ch">\&quot;</span><span class="st">NewImage</span><span class="ch">\&quot;</span><span class="st">: { </span><span class="ch">\&quot;</span><span class="st">Status</span><span class="ch">\&quot;</span><span class="st">: { </span><span class="ch">\&quot;</span><span class="st">S</span><span class="ch">\&quot;</span><span class="st">: [</span><span class="ch">\&quot;</span><span class="st">PENDING</span><span class="ch">\&quot;</span><span class="st">] } } } }&quot;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>By placing this filtering rule on the DynamoDB stream mapping, your
+downstream Lambda function executes only when relevant data changes
+occur, streamlining data processing workflows natively.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-streams-event-filtering-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

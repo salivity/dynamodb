@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DAX Handles Write-Through and Write-Around - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Accelerator (DAX) is a fully managed, highly available, in-memory cache designed to reduce DynamoDB response times from milliseconds to microseconds. When managing application writes, developers must balance data consistency, cache utiliza">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dax-handles-write-through-and-write-around">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DAX Handles Write-Through and Write-Around - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dax-handles-write-through-and-write-around" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Accelerator (DAX) is a fully managed, highly available, in-memory cache designed to reduce DynamoDB response times from milliseconds to microseconds. When managing application writes, developers must balance data consistency, cache utiliza" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dax-handles-write-through-and-write-around">How DAX Handles
+Write-Through and Write-Around</h1>
+<p>Amazon DynamoDB Accelerator (DAX) is a fully managed, highly
+available, in-memory cache designed to reduce DynamoDB response times
+from milliseconds to microseconds. When managing application writes,
+developers must balance data consistency, cache utilization, and write
+latency. This article provides an overview of how DAX natively executes
+a write-through caching strategy and how applications can implement a
+write-around approach to optimize performance for various workloads.</p>
+<h2 id="understanding-dax-caching-architecture">Understanding DAX
+Caching Architecture</h2>
+<p>DAX provides two primary caches:</p>
+<ol type="1">
+<li><strong>Item Cache:</strong> Stores individual items retrieved via
+<code>GetItem</code> or <code>BatchGetItem</code> calls.</li>
+<li><strong>Query Cache:</strong> Stores collections of items retrieved
+via <code>Query</code> or <code>Scan</code> calls, along with the
+request parameters.</li>
+</ol>
+<p>How DAX handles writes directly determines how these caches maintain
+consistency with the underlying DynamoDB tables.</p>
+<h2 id="write-through-caching-in-dax">Write-Through Caching in DAX</h2>
+<p>Write-through is the default and native behavior of DAX when an
+application directs write requests (<code>PutItem</code>,
+<code>UpdateItem</code>, <code>DeleteItem</code>,
+<code>BatchWriteItem</code>) directly to the DAX client endpoint.</p>
+<h3 id="how-it-operates">How It Operates</h3>
+<ol type="1">
+<li><strong>Application Write:</strong> The application sends a write
+operation directly to the DAX cluster.</li>
+<li><strong>Synchronous Write to DynamoDB:</strong> DAX intercepts the
+call and simultaneously applies the change to the underlying DynamoDB
+table.</li>
+<li><strong>Cache Update:</strong> Upon successful confirmation from
+DynamoDB, DAX updates or evicts the corresponding item in its own Item
+Cache.</li>
+<li><strong>Response to Client:</strong> DAX returns a success code to
+the calling application only after the write to DynamoDB succeeds.</li>
+</ol>
+<h3 id="effects-on-the-caches">Effects on the Caches</h3>
+<ul>
+<li><strong>Item Cache:</strong> The written item is immediately updated
+in or added to the Item Cache, ensuring that subsequent
+<code>GetItem</code> calls return the most current data without a cache
+miss.</li>
+<li><strong>Query Cache:</strong> DAX automatically invalidates the
+relevant Query Cache results. Because query results depend on complex
+filters and sort keys, DAX does not attempt to calculate how a single
+write alters query sets; it clears the query cache to prevent stale
+reads.</li>
+</ul>
+<h3 id="advantages-and-trade-offs">Advantages and Trade-offs</h3>
+<ul>
+<li><strong>Pros:</strong> Minimizes read misses for newly written or
+updated data. It guarantees read-your-own-writes consistency through the
+DAX client.</li>
+<li><strong>Cons:</strong> Introduces slight write overhead because data
+must pass through both DAX and DynamoDB before returning a success
+response. It can also cause cache churn if frequently written data is
+rarely read.</li>
+</ul>
+<h2 id="write-around-caching-with-dax">Write-Around Caching with
+DAX</h2>
+<p>DAX does not have a native toggle for "write-around" caching;
+instead, write-around is an architectural pattern implemented at the
+application level by bypassing DAX for write operations.</p>
+<h3 id="how-it-operates-1">How It Operates</h3>
+<ol type="1">
+<li><strong>Dual Client Configuration:</strong> The application
+initializes two clients—a standard AWS DynamoDB SDK client and a DAX
+client.</li>
+<li><strong>Direct Writes:</strong> The application routes write
+requests directly to the standard DynamoDB endpoint via the DynamoDB
+client, bypassing DAX entirely.</li>
+<li><strong>Reads via DAX:</strong> The application routes read
+operations (<code>GetItem</code>, <code>Query</code>) to the DAX
+cluster.</li>
+</ol>
+<h3 id="effects-on-the-caches-1">Effects on the Caches</h3>
+<ul>
+<li><strong>Item Stamping / Latency:</strong> DAX is completely unaware
+of the direct write to DynamoDB. Consequently, the existing entry in the
+DAX Item Cache remains unchanged until its Time-to-Live (TTL)
+expires.</li>
+<li><strong>Stale Reads:</strong> Any read request routed through DAX
+prior to TTL expiration will serve stale data. Once the TTL expires, the
+next read fetches the fresh item from DynamoDB and repopulates the DAX
+cache.</li>
+</ul>
+<h3 id="advantages-and-trade-offs-1">Advantages and Trade-offs</h3>
+<ul>
+<li><strong>Pros:</strong> Ideal for write-heavy workloads where written
+data is not immediately read. It prevents high-volume writes (such as
+bulk data loads or real-time log ingestion) from flushing hot items out
+of the cache. It also minimizes write latency by eliminating the DAX
+middle layer.</li>
+<li><strong>Cons:</strong> Increases the risk of serving stale data.
+Applications must be tolerant of eventual consistency defined by the
+cache TTL settings.</li>
+</ul>
+<h2 id="summary-of-use-cases">Summary of Use Cases</h2>
+<ul>
+<li><strong>Choose Write-Through (Native DAX):</strong> Best for
+read-heavy applications where newly created or updated items are read
+immediately (e.g., user profile updates, e-commerce shopping
+carts).</li>
+<li><strong>Choose Write-Around (Application Bypass):</strong> Best for
+bulk ingestion, batch updates, or audit logging where data is rarely
+read immediately after being written, preserving DAX cache space for
+genuinely hot items.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dax-handles-write-through-and-write-around';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

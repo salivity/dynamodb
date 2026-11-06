@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Object Serialization in Non-JavaScript SDKs - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB stores data using low-level attribute type descriptors—such as {&quot;S&quot;: &quot;value&quot;} or {&quot;N&quot;: &quot;123&quot;}—which represent DynamoDB’s native data model. While JavaScript and TypeScript ecosystems often rely on the Document Client to translate standard">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-object-serialization-in-non-java-script-sd-ks">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Object Serialization in Non-JavaScript SDKs - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-object-serialization-in-non-java-script-sd-ks" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB stores data using low-level attribute type descriptors—such as {&quot;S&quot;: &quot;value&quot;} or {&quot;N&quot;: &quot;123&quot;}—which represent DynamoDB’s native data model. While JavaScript and TypeScript ecosystems often rely on the Document Client to translate standard" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-object-serialization-in-non-javascript-sdks">DynamoDB
+Object Serialization in Non-JavaScript SDKs</h1>
+<p>Amazon DynamoDB stores data using low-level attribute type
+descriptors—such as <code>{"S": "value"}</code> or
+<code>{"N": "123"}</code>—which represent DynamoDB’s native data model.
+While JavaScript and TypeScript ecosystems often rely on the Document
+Client to translate standard JSON objects, non-JavaScript AWS SDKs
+handle object mapping through higher-level Object Persistence Models
+(OPMs), reflection-based mappers, and language-specific struct tags or
+annotations. These tools serialize native classes, structs, or domain
+objects into DynamoDB’s wire-format attribute maps and deserialize
+responses back into typed language constructs.</p>
+<h3 id="the-low-level-wire-format-vs-domain-models">The Low-Level Wire
+Format vs. Domain Models</h3>
+<p>At the transport layer, the DynamoDB API does not accept plain JSON
+or arbitrary binary classes. Every write request (<code>PutItem</code>,
+<code>UpdateItem</code>) expects a map of attribute names paired with
+typed values (e.g., <code>S</code> for String, <code>N</code> for
+Number, <code>B</code> for Binary, <code>M</code> for Map,
+<code>L</code> for List, and sets like <code>SS</code> or
+<code>NS</code>). Non-JavaScript SDKs automate the translation between
+these rigid descriptors and language-native objects using distinct
+patterns tailored to each runtime.</p>
+<h3 id="java-the-dynamodb-enhanced-client">Java: The DynamoDB Enhanced
+Client</h3>
+<p>In the AWS SDK for Java 2.x, serialization is primarily driven by the
+<strong>DynamoDB Enhanced Client</strong>.</p>
+<ul>
+<li><strong>Annotations and Schemas:</strong> Java maps POJOs (Plain Old
+Java Objects) using annotations such as <code>@DynamoDbBean</code>,
+<code>@DynamoDbPartitionKey</code>, <code>@DynamoDbSortKey</code>, and
+<code>@DynamoDbAttribute</code>.</li>
+<li><strong>Static Table Schemas:</strong> For immutable classes or
+scenarios avoiding reflection, the SDK provides the
+<code>TableSchema</code> builder, defining mapping rules
+programmatically.</li>
+<li><strong>Custom Converters:</strong> When a class contains an
+unsupported or nested third-party object, developers implement the
+<code>AttributeConverter&lt;T&gt;</code> interface. This interface
+defines two methods: <code>transformFrom(T input)</code> to convert the
+custom object into an <code>AttributeValue</code>, and
+<code>transformTo(AttributeValue input)</code> to reconstruct the
+original type.</li>
+<li><strong>Nested Objects:</strong> Sub-objects annotated with
+<code>@DynamoDbBean</code> automatically serialize into nested DynamoDB
+Maps (<code>M</code>).</li>
+</ul>
+<h3 id="net-c-the-object-persistence-model">.NET (C#): The Object
+Persistence Model</h3>
+<p>The AWS SDK for .NET includes a high-level
+<code>DynamoDBContext</code> that manages mapping via reflection.</p>
+<ul>
+<li><strong>Attributes:</strong> Properties and classes are decorated
+with attributes such as <code>[DynamoDBTable]</code>,
+<code>[DynamoDBHashKey]</code>, <code>[DynamoDBRangeKey]</code>, and
+<code>[DynamoDBProperty]</code>.</li>
+<li><strong>Custom Type Conversion:</strong> If a property cannot be
+implicitly mapped to standard primitive or collection types, the SDK
+requires an implementation of <code>IPropertyConverter</code>. This
+interface supplies <code>ToEntry(object value)</code> to produce a
+<code>DynamoDBEntry</code> and
+<code>FromEntry(DynamoDBEntry entry)</code> to hydrate the custom object
+back into the .NET class.</li>
+<li><strong>Complex Hierarchies:</strong> Nested classes can be
+serialized as JSON strings or flattened into nested maps depending on
+whether the <code>[DynamoDBIgnore]</code> or explicit conversion
+attributes are applied.</li>
+</ul>
+<h3 id="python-boto3-and-pynamodb">Python: Boto3 and PynamoDB</h3>
+<p>The official Python SDK, <strong>Boto3</strong>, handles
+serialization at two different layers:</p>
+<ul>
+<li><strong>Boto3 TypeSerializer/TypeDeserializer:</strong> The
+low-level client requires explicit dictionaries, but Boto3 includes the
+<code>boto3.dynamodb.types.TypeSerializer</code> and
+<code>TypeDeserializer</code> classes. These utilities convert native
+Python types (such as <code>str</code>, <code>int</code>,
+<code>list</code>, <code>dict</code>, and <code>decimal.Decimal</code>)
+to and from DynamoDB attribute values.</li>
+<li><strong>Manual Custom Serialization:</strong> Boto3 does not have a
+built-in ORM/ODM for custom Python classes. Custom objects must define
+standard serialization methods (such as <code>to_dict()</code> or
+<code>asdict()</code> from standard <code>dataclasses</code>) before
+passing data to the serializer.</li>
+<li><strong>Third-Party Mappers (PynamoDB):</strong> To achieve behavior
+similar to Java or .NET, Python developers commonly use libraries like
+PynamoDB, which define models using declarative attributes
+(<code>UnicodeAttribute</code>, <code>MapAttribute</code>) and provide
+custom serialization hooks via <code>Attribute</code> subclasses.</li>
+</ul>
+<h3 id="go-the-attributevalue-package">Go: The
+<code>attributevalue</code> Package</h3>
+<p>The AWS SDK for Go (v2) uses the
+<code>feature/dynamodb/attributevalue</code> package to bridge Go
+structs and DynamoDB data types.</p>
+<ul>
+<li><p><strong>Struct Tags:</strong> Go relies on struct field tags
+using the <code>dynamodbav</code> namespace (e.g.,
+<code>dynamodbav:"user_id,hash"</code>,
+<code>dynamodbav:"created_at,omitempty"</code>).</p></li>
+<li><p><strong>Reflection-Driven Marshalling:</strong> Functions such as
+<code>attributevalue.MarshalMap(interface{})</code> inspect struct
+fields and recursively generate
+<code>map[string]types.AttributeValue</code>.</p></li>
+<li><p><strong>Custom Marshalling Interfaces:</strong> To intercept and
+customize serialization for domain types, a custom struct must implement
+the <code>attributevalue.Marshaler</code> interface:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode go"><code class="sourceCode go"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>MarshalDynamoDBAttributeValue<span class="op">()</span> <span class="op">(</span>types<span class="op">.</span>AttributeValue<span class="op">,</span> <span class="dt">error</span><span class="op">)</span></span></code></pre></div>
+<p>Deserialization uses the companion
+<code>attributevalue.Unmarshaler</code> interface:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode go"><code class="sourceCode go"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>UnmarshalDynamoDBAttributeValue<span class="op">(</span>types<span class="op">.</span>AttributeValue<span class="op">)</span> <span class="dt">error</span></span></code></pre></div></li>
+</ul>
+<h3 id="handling-unsupported-or-deeply-nested-custom-types">Handling
+Unsupported or Deeply Nested Custom Types</h3>
+<p>When an SDK encounters a custom type without a built-in primitive
+mapping or an explicit converter:</p>
+<ol type="1">
+<li><strong>Map Decomposition:</strong> If the object is composed of
+public fields or standard accessors, the SDK attempts to recursively
+serialize it into a native Map (<code>M</code>).</li>
+<li><strong>String/Blob Fallback:</strong> If the structure is complex
+or opaque (such as third-party library classes), developers commonly
+serialize the object into a JSON string or Protocol Buffer byte array
+and map it to a String (<code>S</code>) or Binary (<code>B</code>)
+attribute.</li>
+<li><strong>Null and Default Handling:</strong> Most non-JavaScript SDKs
+default to omitting null fields from writes rather than writing a null
+attribute (<code>NULL: true</code>), unless explicitly instructed via
+configuration settings or annotations.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-object-serialization-in-non-java-script-sd-ks';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

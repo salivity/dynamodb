@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Manages Index Storage Overhead - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages storage overhead for index structures through architectural separation, selective attribute projection, and sparse indexing techniques. By treating secondary indexes as specialized, automated tables, DynamoDB gives developers granu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-index-storage-overhead">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Manages Index Storage Overhead - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-index-storage-overhead" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages storage overhead for index structures through architectural separation, selective attribute projection, and sparse indexing techniques. By treating secondary indexes as specialized, automated tables, DynamoDB gives developers granu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-manages-index-storage-overhead">How DynamoDB
+Manages Index Storage Overhead</h1>
+<p>Amazon DynamoDB manages storage overhead for index structures through
+architectural separation, selective attribute projection, and sparse
+indexing techniques. By treating secondary indexes as specialized,
+automated tables, DynamoDB gives developers granular control over the
+footprint of secondary access patterns. This article explains how
+DynamoDB minimizes and calculates index storage costs across Global
+Secondary Indexes (GSIs) and Local Secondary Indexes (LSIs), detailing
+the mechanics of sparse entries, projection types, and per-item metadata
+overhead.</p>
+<h2 id="decoupled-storage-architecture">Decoupled Storage
+Architecture</h2>
+<p>DynamoDB handles secondary indexes—particularly Global Secondary
+Indexes (GSIs)—as independent tables behind the scenes. When an item is
+written to the base table, DynamoDB asynchronously replicates the
+relevant data to the GSI storage partitions. Because GSIs do not reside
+within the exact same physical storage partitions as the base table,
+their storage overhead scales completely independently based on the
+specific attributes copied over rather than the total size of the parent
+item.</p>
+<p>Local Secondary Indexes (LSIs), by contrast, reside on the same
+physical storage partition as the base item's partition key, governed by
+a strict 10 GB partition limit. To prevent index structures from
+breaching this limit, DynamoDB uses strict space accounting for every
+LSI update.</p>
+<h2 id="attribute-projections">Attribute Projections</h2>
+<p>The primary mechanism for controlling storage overhead is the index
+projection policy. When defining an index, you specify which attributes
+are copied from the base table into the index structure:</p>
+<ul>
+<li><strong>KEYS_ONLY:</strong> Projects only the base table partition
+key, the base table sort key (if present), and the index partition and
+sort keys. This yields the lowest possible storage overhead, ideal for
+existence checks or lightweight lookups that subsequently fetch base
+table items if full attributes are needed.</li>
+<li><strong>INCLUDE:</strong> Projects only the primary keys plus a
+defined list of non-key attributes. This balances storage overhead with
+query performance, preventing over-allocation of disk space for large,
+rarely queried attributes (such as long text blobs or JSON
+payloads).</li>
+<li><strong>ALL:</strong> Clones the entire base table item into the
+index. While this eliminates the need for table fetches during queries,
+it doubles the raw data storage footprint for indexed items.</li>
+</ul>
+<h2 id="sparse-indexing">Sparse Indexing</h2>
+<p>DynamoDB inherently uses sparse indexes to eliminate overhead for
+irrelevant items. An item only occupies space in an index if that item
+contains both the partition key and sort key defined by the index
+schema.</p>
+<p>If a base table contains millions of items, but only a fraction
+contain the attributes defining a secondary index, DynamoDB only writes
+those specific items to the index storage partition. Items lacking the
+index keys consume zero bytes of storage overhead in that index,
+allowing applications to create highly targeted, cost-effective index
+patterns without paying for empty records.</p>
+<h2 id="metadata-and-byte-level-overhead-calculation">Metadata and
+Byte-Level Overhead Calculation</h2>
+<p>In addition to the raw size of projected attributes, DynamoDB applies
+structural overhead to each indexed entry to maintain internal
+B-tree-like routing and partition integrity:</p>
+<ul>
+<li><strong>Base Overhead:</strong> Each index entry incurs
+approximately 100 bytes of system overhead to store metadata, index
+pointers, and partition tracking information.</li>
+<li><strong>Key Storage:</strong> The index must store the base table
+primary keys (partition key and sort key) alongside the index primary
+keys, even in <code>KEYS_ONLY</code> configurations.</li>
+<li><strong>Total Calculation:</strong> The storage consumed by an
+indexed item equals the size of the base table primary keys + the size
+of the index keys + the size of projected non-key attributes + 100 bytes
+of overhead.</li>
+</ul>
+<p>By leveraging sparse entries and restricting projected attributes to
+the minimum required dataset, DynamoDB ensures that the physical storage
+overhead of secondary indexes remains predictable, compact, and isolated
+from base table expansion.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-index-storage-overhead';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

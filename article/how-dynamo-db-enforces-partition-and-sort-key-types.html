@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Enforces Partition and Sort Key Types - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB operates as a NoSQL database that offers flexible, schema-less item attributes while strictly enforcing schema constraints on primary keys. While non-key attributes can vary dynamically across items, the primary key—consisting of a partiti">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-partition-and-sort-key-types">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Enforces Partition and Sort Key Types - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-partition-and-sort-key-types" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB operates as a NoSQL database that offers flexible, schema-less item attributes while strictly enforcing schema constraints on primary keys. While non-key attributes can vary dynamically across items, the primary key—consisting of a partiti" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-enforces-partition-and-sort-key-types">How DynamoDB
+Enforces Partition and Sort Key Types</h1>
+<p>Amazon DynamoDB operates as a NoSQL database that offers flexible,
+schema-less item attributes while strictly enforcing schema constraints
+on primary keys. While non-key attributes can vary dynamically across
+items, the primary key—consisting of a partition key and an optional
+sort key—must strictly adhere to predefined rules established at table
+creation. This article examines the mechanisms DynamoDB uses to enforce
+key types, how it validates input during write operations, the
+constraints imposed on key values, and the errors generated when
+violations occur.</p>
+<h3 id="schema-declaration-at-table-creation">Schema Declaration at
+Table Creation</h3>
+<p>DynamoDB establishes schema constraints at the time of table creation
+via the <code>KeySchema</code> and <code>AttributeDefinitions</code>
+parameters. The <code>KeySchema</code> defines the role of each key
+attribute (either <code>HASH</code> for the partition key or
+<code>RANGE</code> for the sort key), while
+<code>AttributeDefinitions</code> specifies the data type for each
+key.</p>
+<p>DynamoDB restricts primary key attributes strictly to three scalar
+data types:</p>
+<ul>
+<li><strong>String (S):</strong> Represents UTF-8 encoded text.</li>
+<li><strong>Number (N):</strong> Represents positive or negative numbers
+with up to 38 digits of precision.</li>
+<li><strong>Binary (B):</strong> Represents arbitrary binary data, such
+as images, compressed formats, or encrypted payloads, encoded in
+base64.</li>
+</ul>
+<p>Complex types like Lists (<code>L</code>), Maps (<code>M</code>),
+Sets (<code>SS</code>, <code>NS</code>, <code>BS</code>), or Booleans
+(<code>BOOL</code>) cannot be used as primary keys. Once the table is
+created, these key attribute definitions become immutable; you cannot
+modify the key structure or change key data types without creating a new
+table and migrating the data.</p>
+<h3 id="request-time-type-validation">Request-Time Type Validation</h3>
+<p>DynamoDB enforces key constraints at the API level during every write
+operation, including <code>PutItem</code>, <code>UpdateItem</code>,
+<code>DeleteItem</code>, and their batch and transactional variants.
+Every write request must include the declared partition key (and sort
+key, if applicable) formatted with the matching data type indicator.</p>
+<p>When an operation is processed, DynamoDB performs a strict type check
+against the declared <code>AttributeDefinitions</code>:</p>
+<ul>
+<li><strong>Exact Type Match:</strong> If a partition key is defined as
+a String (<code>"S"</code>), providing a Number (<code>"N"</code>) or
+any other type causes the request to be rejected immediately.</li>
+<li><strong>Format Correctness:</strong> For Number types, DynamoDB
+validates that the value is a valid numeric string representation before
+accepting the write. For Binary types, it checks for valid
+base64-encoded bytes.</li>
+<li><strong>Presence Requirement:</strong> Unlike regular attributes,
+primary key attributes cannot be omitted. A write operation lacking the
+primary key is blocked before any data is committed to storage.</li>
+</ul>
+<h3 id="value-constraints-and-size-limits">Value Constraints and Size
+Limits</h3>
+<p>In addition to data type validation, DynamoDB enforces structural
+size constraints on partition and sort key values:</p>
+<ul>
+<li><strong>Partition Key Size:</strong> The maximum length of a
+partition key value is 2048 bytes.</li>
+<li><strong>Sort Key Size:</strong> The maximum length of a sort key
+value is 1024 bytes.</li>
+<li><strong>Empty Values:</strong> While DynamoDB permits empty string
+and empty binary values for non-key attributes, primary key values must
+not be empty. A partition key or sort key cannot contain an empty string
+(<code>""</code>) or an empty binary payload.</li>
+</ul>
+<h3 id="error-handling-for-schema-violations">Error Handling for Schema
+Violations</h3>
+<p>When a request violates key schema constraints, DynamoDB rejects the
+operation synchronously and returns an HTTP 400 client error. Typical
+responses include:</p>
+<ul>
+<li><strong><code>ValidationException</code></strong>: Triggered when a
+key type does not match the table definition (e.g.,
+<code>The provided key element does not match the schema</code>), when a
+required key is missing, or when key size limits are exceeded.</li>
+<li><strong><code>SerializationException</code></strong>: Triggered when
+the payload cannot be parsed according to the expected data format (such
+as an invalid binary string).</li>
+</ul>
+<p>Because validation happens prior to storage execution, non-compliant
+requests consume no write capacity units (WCUs), protecting table
+throughput and maintaining data integrity.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-partition-and-sort-key-types';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

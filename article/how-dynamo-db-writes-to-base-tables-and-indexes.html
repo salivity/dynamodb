@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Writes to Base Tables and Indexes - dynamodb</title>
+    <meta name="description" content="When you write to an Amazon DynamoDB table that includes secondary indexes, DynamoDB separates the execution into synchronous and asynchronous operations depending on the index type. The base table write is committed first alongside any Local Secondary In">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-writes-to-base-tables-and-indexes">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Writes to Base Tables and Indexes - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-writes-to-base-tables-and-indexes" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When you write to an Amazon DynamoDB table that includes secondary indexes, DynamoDB separates the execution into synchronous and asynchronous operations depending on the index type. The base table write is committed first alongside any Local Secondary In" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-writes-to-base-tables-and-indexes">How DynamoDB
+Writes to Base Tables and Indexes</h1>
+<p>When you write to an Amazon DynamoDB table that includes secondary
+indexes, DynamoDB separates the execution into synchronous and
+asynchronous operations depending on the index type. The base table
+write is committed first alongside any Local Secondary Indexes (LSIs)
+synchronously. In contrast, Global Secondary Indexes (GSIs) receive
+updates asynchronously through an internal storage replication stream.
+Understanding this split mechanism is essential for managing latency,
+capacity costs, and data consistency across your application.</p>
+<h3 id="the-base-table-write-execution">The Base Table Write
+Execution</h3>
+<p>When a client sends a write request—such as <code>PutItem</code>,
+<code>UpdateItem</code>, or <code>DeleteItem</code>—to DynamoDB, the
+request is directed to the storage nodes hosting the target
+partition.</p>
+<ol type="1">
+<li><strong>Quorum Acknowledgment:</strong> DynamoDB replicates data
+across three facilities within an AWS Region. The write to the base
+table is considered successful and acknowledged to the client as soon as
+a quorum (at least two out of three storage nodes) confirms the
+write.</li>
+<li><strong>Item Evaluation:</strong> DynamoDB evaluates whether the
+incoming write modifies attributes that are part of any defined
+secondary index keys or projected attributes. If an index is unaffected
+by the update, DynamoDB skips processing for that index entirely.</li>
+</ol>
+<h3 id="local-secondary-indexes-lsis-synchronous-updates">Local
+Secondary Indexes (LSIs): Synchronous Updates</h3>
+<p>Local Secondary Indexes share the same partition key as the base
+table item but use a different sort key. Because an LSI shares the same
+physical partition as the base table:</p>
+<ul>
+<li><strong>Atomic and Synchronous:</strong> Writes to LSIs occur in the
+exact same transaction as the base table write. The update to the LSI
+must succeed alongside the base table for the client to receive an HTTP
+200 success response.</li>
+<li><strong>Failure Handling:</strong> If an LSI write fails (for
+example, if the 10 GB partition limit for an item collection with LSIs
+is exceeded), the entire write to the base table is rejected.</li>
+<li><strong>Capacity Consumption:</strong> LSIs consume Write Capacity
+Units (WCUs) directly from the base table's allocated capacity. A write
+that alters an LSI consumes additional WCUs proportional to the size of
+the projected attributes written to the index.</li>
+</ul>
+<h3 id="global-secondary-indexes-gsis-asynchronous-updates">Global
+Secondary Indexes (GSIs): Asynchronous Updates</h3>
+<p>Global Secondary Indexes have different partition keys and sort keys
+from the base table, meaning they are stored on entirely separate
+physical storage partitions.</p>
+<ul>
+<li><strong>Decoupled Replication:</strong> DynamoDB does not update
+GSIs synchronously during the client write. Instead, once the base table
+write achieves quorum, DynamoDB automatically writes the mutation to an
+internal, highly optimized replication log.</li>
+<li><strong>Background Ingestion:</strong> Background storage processors
+consume this log and asynchronously apply the item mutations to the
+corresponding GSI partitions.</li>
+<li><strong>Eventual Consistency:</strong> Because updates are
+propagated asynchronously, reads against a GSI are strictly eventually
+consistent. There is a small propagation delay (typically a fraction of
+a second under normal load) before changes appear in the index.</li>
+<li><strong>Dedicated Capacity:</strong> GSIs maintain their own
+provisioned or on-demand write capacity. The asynchronous update
+consumes WCUs from the specific GSI, calculated based on the size of the
+projected attributes in that index.</li>
+</ul>
+<h3 id="handling-throttling-and-backpressure">Handling Throttling and
+Backpressure</h3>
+<p>Because GSI updates occur asynchronously, capacity mismatches between
+the base table and its GSIs can create operational issues:</p>
+<ul>
+<li><strong>GSI Throttling:</strong> If a GSI does not have sufficient
+write capacity to absorb the incoming write rate from the base table,
+the internal replication stream buffers the updates.</li>
+<li><strong>Backpressure on the Base Table:</strong> To prevent
+unbounded replication lag, DynamoDB applies backpressure. If the
+replication buffer fills because a GSI is severely throttled, DynamoDB
+throttles writes on the base table itself, even if the base table has
+ample available capacity.</li>
+</ul>
+<h3 id="write-capacity-optimization">Write Capacity Optimization</h3>
+<p>DynamoDB minimizes resource usage across indexes using the following
+rules:</p>
+<ul>
+<li><strong>Unchanged Keys:</strong> If an <code>UpdateItem</code>
+operation modifies an attribute that is neither a key nor a projected
+attribute in a given index, no write capacity is consumed on that
+index.</li>
+<li><strong>Deletes and Replaces:</strong> If a write modifies an
+index's key attribute, DynamoDB must perform two actions on the index:
+delete the old indexed entry and write the new entry. Both actions
+consume write capacity on the affected index.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-writes-to-base-tables-and-indexes';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

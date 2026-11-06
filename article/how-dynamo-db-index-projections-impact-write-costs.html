@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Index Projections Impact Write Costs - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, secondary indexes—both Global Secondary Indexes (GSIs) and Local Secondary Indexes (LSIs)—replicate data from the base table to support alternative query patterns. The projection setting (KEYSONLY, INCLUDE, or ALL) defines which attrib">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-index-projections-impact-write-costs">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Index Projections Impact Write Costs - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-index-projections-impact-write-costs" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, secondary indexes—both Global Secondary Indexes (GSIs) and Local Secondary Indexes (LSIs)—replicate data from the base table to support alternative query patterns. The projection setting (KEYSONLY, INCLUDE, or ALL) defines which attrib" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-index-projections-impact-write-costs">How DynamoDB
+Index Projections Impact Write Costs</h1>
+<p>In Amazon DynamoDB, secondary indexes—both Global Secondary Indexes
+(GSIs) and Local Secondary Indexes (LSIs)—replicate data from the base
+table to support alternative query patterns. The projection setting
+(<code>KEYS_ONLY</code>, <code>INCLUDE</code>, or <code>ALL</code>)
+defines which attributes are copied from the base item into the index.
+This selection directly dictates write costs by determining the size of
+the written index item, the number of consumed Write Capacity Units
+(WCUs), and whether a write to the base table triggers an index update
+at all.</p>
+<h2 id="how-dynamodb-calculates-index-write-costs">How DynamoDB
+Calculates Index Write Costs</h2>
+<p>Every write to an index consumes Write Capacity Units (WCUs).
+DynamoDB calculates write units based on 1 KB chunks:</p>
+<ul>
+<li><strong>Item Size Rounding:</strong> One WCU writes an item up to 1
+KB in size. If an item written to an index is 1.2 KB, it rounds up to
+consume 2 WCUs.</li>
+<li><strong>GSI Billing:</strong> GSIs have their own provisioned or
+on-demand write capacity separate from the base table. An inefficient
+projection directly inflates the GSI's billing metrics.</li>
+<li><strong>LSI Billing:</strong> LSIs share write capacity with the
+base table. Larger LSI updates consume the base table's allocated
+capacity.</li>
+</ul>
+<h2 id="the-three-projection-types-and-write-behavior">The Three
+Projection Types and Write Behavior</h2>
+<h3 id="1-keys_only">1. KEYS_ONLY</h3>
+<p>This setting projects only the index partition key, index sort key,
+and the base table's primary keys.</p>
+<ul>
+<li><strong>Impact on Write Cost:</strong> Minimal. Because only key
+attributes are stored, the index item size is typically well under 1 KB,
+consuming only 1 WCU per write.</li>
+<li><strong>Update Filtering:</strong> Modifying non-key attributes on
+the base table will <strong>not</strong> trigger an update to the GSI,
+completely eliminating index write costs for those operations.</li>
+</ul>
+<h3 id="2-include">2. INCLUDE</h3>
+<p>This setting allows you to specify an explicit list of non-key
+attributes to project alongside the key attributes.</p>
+<ul>
+<li><strong>Impact on Write Cost:</strong> Moderate and predictable. The
+item size increases only by the size of the specific attributes you
+declare. As long as the combined size of the keys and included
+attributes stays below 1 KB increments, WCU consumption remains
+controlled.</li>
+<li><strong>Update Filtering:</strong> If an update to a base table item
+modifies an attribute that is <em>not</em> in the <code>INCLUDE</code>
+list (and not a key), DynamoDB bypasses updating the GSI entirely,
+saving write capacity.</li>
+</ul>
+<h3 id="3-all">3. ALL</h3>
+<p>This setting replicates every attribute from the base table item into
+the secondary index.</p>
+<ul>
+<li><strong>Impact on Write Cost:</strong> Maximum. The index item
+mirrors the base table item's full size. If your base table item is 8
+KB, writing to the GSI also consumes 8 WCUs.</li>
+<li><strong>Update Filtering:</strong> Any write or update to any
+attribute in the base table forces a corresponding write to the GSI.
+There is zero write-filtering benefit.</li>
+</ul>
+<h2 id="write-amplification-during-attribute-updates">Write
+Amplification During Attribute Updates</h2>
+<p>When modifying an existing item in the base table, projection
+settings influence write amplification:</p>
+<ul>
+<li><strong>Key Changes:</strong> Changing an item's primary key or GSI
+key triggers a delete and a put operation on the index, doubling the WCU
+consumption for that event.</li>
+<li><strong>Projected Attribute Changes:</strong> Updating an attribute
+contained within a projection requires an index update.</li>
+<li><strong>Unprojected Attribute Changes:</strong> Updating an
+attribute omitted from <code>KEYS_ONLY</code> or <code>INCLUDE</code>
+projections costs zero WCUs on the GSI, as DynamoDB skips writing to the
+index.</li>
+</ul>
+<h2 id="best-practices-to-minimize-costs">Best Practices to Minimize
+Costs</h2>
+<ol type="1">
+<li><strong>Avoid Defaulting to ALL:</strong> Use <code>ALL</code> only
+when access patterns require near-complete item projections and cannot
+tolerate the latency or cost of secondary fetches back to the base
+table.</li>
+<li><strong>Favor INCLUDE for Query Coverage:</strong> Identify the
+specific attributes your read queries frequently retrieve and project
+only those. This keeps the item size within lower 1 KB boundaries and
+avoids index writes when other base table attributes change.</li>
+<li><strong>Use KEYS_ONLY for High-Velocity Base Tables:</strong> If a
+base table experiences frequent updates on attributes that secondary
+queries do not need, <code>KEYS_ONLY</code> provides the maximum write
+isolation and prevents unnecessary secondary index spend.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-index-projections-impact-write-costs';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

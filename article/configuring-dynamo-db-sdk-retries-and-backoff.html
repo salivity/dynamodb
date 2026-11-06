@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuring DynamoDB SDK Retries and Backoff - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB automatically throttles requests that exceed provisioned throughput or partition limits, requiring client applications to handle retries gracefully. This article explains the specific AWS SDK parameters used to configure maximum retries an">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/configuring-dynamo-db-sdk-retries-and-backoff">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Configuring DynamoDB SDK Retries and Backoff - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/configuring-dynamo-db-sdk-retries-and-backoff" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB automatically throttles requests that exceed provisioned throughput or partition limits, requiring client applications to handle retries gracefully. This article explains the specific AWS SDK parameters used to configure maximum retries an" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="configuring-dynamodb-sdk-retries-and-backoff">Configuring
+DynamoDB SDK Retries and Backoff</h1>
+<p>Amazon DynamoDB automatically throttles requests that exceed
+provisioned throughput or partition limits, requiring client
+applications to handle retries gracefully. This article explains the
+specific AWS SDK parameters used to configure maximum retries and
+exponential backoff for DynamoDB requests across modern SDK
+implementations, detailing how these settings work under standard and
+adaptive retry modes.</p>
+<h2 id="the-core-configuration-parameter-maxattempts">The Core
+Configuration Parameter: <code>maxAttempts</code></h2>
+<p>In modern AWS SDKs, the primary parameter used to configure the
+maximum number of retry attempts is <code>maxAttempts</code> (or
+<code>max_attempts</code> in Python).</p>
+<p>AWS SDKs use built-in exponential backoff and jitter algorithms by
+default whenever retries are enabled. Because the backoff formula is
+inherently managed by the SDK's retry strategy, configuring retries does
+not require manually setting delay multipliers. Instead, defining the
+maximum attempt threshold dictates how many total attempts (the initial
+request plus subsequent retries) the client will make before raising an
+exception.</p>
+<h3 id="aws-sdk-for-python-boto3">AWS SDK for Python (Boto3)</h3>
+<p>In Boto3, retries and backoff are configured using the
+<code>Config</code> object from <code>botocore.config</code>. The
+parameter is defined within a <code>retries</code> dictionary:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> boto3</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> botocore.config <span class="im">import</span> Config</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>config <span class="op">=</span> Config(</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    retries<span class="op">=</span>{</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>        <span class="st">&#39;max_attempts&#39;</span>: <span class="dv">5</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">&#39;mode&#39;</span>: <span class="st">&#39;standard&#39;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>dynamodb <span class="op">=</span> boto3.client(<span class="st">&#39;dynamodb&#39;</span>, config<span class="op">=</span>config)</span></code></pre></div>
+<ul>
+<li><strong><code>max_attempts</code></strong>: An integer representing
+the total number of request attempts allowed (e.g., a value of
+<code>5</code> allows 1 initial request and up to 4 retries).</li>
+<li><strong><code>mode</code></strong>: The retry algorithm. Setting
+this to <code>'standard'</code> implements exponential backoff with full
+jitter, while <code>'adaptive'</code> dynamically manages request rates
+based on client-side rate limiting.</li>
+</ul>
+<h3 id="aws-sdk-for-javascripttypescript-v3">AWS SDK for
+JavaScript/TypeScript (v3)</h3>
+<p>In AWS SDK for JavaScript v3, the parameter is
+<code>maxAttempts</code>, passed directly into the client configuration
+object:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode javascript"><code class="sourceCode javascript"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { DynamoDBClient } <span class="im">from</span> <span class="st">&quot;@aws-sdk/client-dynamodb&quot;</span><span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> client <span class="op">=</span> <span class="kw">new</span> <span class="fu">DynamoDBClient</span>({</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">maxAttempts</span><span class="op">:</span> <span class="dv">5</span><span class="op">,</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">retryMode</span><span class="op">:</span> <span class="st">&quot;standard&quot;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>})<span class="op">;</span></span></code></pre></div>
+<ul>
+<li><strong><code>maxAttempts</code></strong>: Specifies the maximum
+number of attempts the client will make for a single operation.</li>
+<li><strong><code>retryMode</code></strong>: Defines the backoff
+behavior (<code>"standard"</code> or <code>"adaptive"</code>). The
+standard mode applies exponential backoff with full jitter
+automatically.</li>
+</ul>
+<h3 id="aws-sdk-for-java-2x">AWS SDK for Java 2.x</h3>
+<p>In the Java SDK v2, retry behavior is configured using the
+<code>ClientOverrideConfiguration</code> and the
+<code>RetryStrategy</code> builder:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>DynamoDbClient client <span class="op">=</span> DynamoDbClient<span class="op">.</span><span class="fu">builder</span><span class="op">()</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">overrideConfiguration</span><span class="op">(</span>ClientOverrideConfiguration<span class="op">.</span><span class="fu">builder</span><span class="op">()</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>        <span class="op">.</span><span class="fu">retryStrategy</span><span class="op">(</span>RetryMode<span class="op">.</span><span class="fu">STANDARD</span><span class="op">)</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>        <span class="op">.</span><span class="fu">build</span><span class="op">())</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">build</span><span class="op">();</span></span></code></pre></div>
+<p>To explicitly customize the retry limit, use
+<code>RetryPolicy</code>:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode java"><code class="sourceCode java"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>ClientOverrideConfiguration configuration <span class="op">=</span> ClientOverrideConfiguration<span class="op">.</span><span class="fu">builder</span><span class="op">()</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">retryPolicy</span><span class="op">(</span>RetryPolicy<span class="op">.</span><span class="fu">builder</span><span class="op">()</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>        <span class="op">.</span><span class="fu">numRetries</span><span class="op">(</span><span class="dv">5</span><span class="op">)</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>        <span class="op">.</span><span class="fu">build</span><span class="op">())</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">build</span><span class="op">();</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>DynamoDbClient client <span class="op">=</span> DynamoDbClient<span class="op">.</span><span class="fu">builder</span><span class="op">()</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">overrideConfiguration</span><span class="op">(</span>configuration<span class="op">)</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span><span class="fu">build</span><span class="op">();</span></span></code></pre></div>
+<ul>
+<li><strong><code>numRetries</code></strong> (or
+<code>maxAttempts</code> via the retry strategy builder): Sets the
+maximum number of retry attempts.</li>
+</ul>
+<h2 id="how-exponential-backoff-operates">How Exponential Backoff
+Operates</h2>
+<p>When <code>maxAttempts</code> is configured with the
+<code>standard</code> retry mode:</p>
+<ol type="1">
+<li><strong>Failure Detection</strong>: The client identifies retryable
+errors, such as <code>ProvisionedThroughputExceededException</code>,
+<code>RequestLimitExceeded</code>, or transient HTTP 5xx errors.</li>
+<li><strong>Exponential Backoff</strong>: The SDK calculates the sleep
+duration based on the formula:<br />
+<code>Wait Time = Base Delay * 2 ^ (Current Attempt)</code></li>
+<li><strong>Full Jitter</strong>: A randomized jitter is applied to
+prevent the "thundering herd" problem, spreading out concurrent retries
+evenly over time.</li>
+<li><strong>Termination</strong>: If the operation fails after reaching
+the specified <code>maxAttempts</code>, the SDK stops retrying and
+propagates the error to the calling application.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/configuring-dynamo-db-sdk-retries-and-backoff';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

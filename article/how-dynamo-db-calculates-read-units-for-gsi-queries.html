@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Calculates Read Units for GSI Queries - dynamodb</title>
+    <meta name="description" content="Querying a Global Secondary Index (GSI) in Amazon DynamoDB consumes read capacity units (RCUs) directly from the index’s provisioned or on-demand capacity rather than the base table. The consumed read units depend on the total aggregate size of the items">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-calculates-read-units-for-gsi-queries">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Calculates Read Units for GSI Queries - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-calculates-read-units-for-gsi-queries" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Querying a Global Secondary Index (GSI) in Amazon DynamoDB consumes read capacity units (RCUs) directly from the index’s provisioned or on-demand capacity rather than the base table. The consumed read units depend on the total aggregate size of the items" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-calculates-read-units-for-gsi-queries">How DynamoDB
+Calculates Read Units for GSI Queries</h1>
+<p>Querying a Global Secondary Index (GSI) in Amazon DynamoDB consumes
+read capacity units (RCUs) directly from the index’s provisioned or
+on-demand capacity rather than the base table. The consumed read units
+depend on the total aggregate size of the items evaluated, the rounding
+rules applied to data blocks, and the consistency model supported by
+secondary indexes.</p>
+<h3 id="the-gsi-consistency-model">The GSI Consistency Model</h3>
+<p>Global Secondary Indexes only support eventually consistent reads. A
+strongly consistent read cannot be requested against a GSI. Under
+DynamoDB's standard pricing model:</p>
+<ul>
+<li>One Read Capacity Unit (RCU) represents one strongly consistent read
+per second for an item up to 4 KB in size.</li>
+<li>For eventually consistent reads, one RCU provides two reads per
+second for items up to 4 KB.</li>
+</ul>
+<p>Consequently, each 4 KB read evaluated from a GSI costs 0.5 RCU.</p>
+<h3 id="aggregate-size-calculation">Aggregate Size Calculation</h3>
+<p>Unlike single-item operations (such as <code>GetItem</code>), a
+<code>Query</code> operation calculates capacity across the entire
+operation rather than item by item.</p>
+<ol type="1">
+<li><strong>Sum the Data Size:</strong> DynamoDB calculates the size of
+all items matching the partition key and sort key conditions.</li>
+<li><strong>Apply Rounding:</strong> The total aggregate size of all
+matched items is rounded up to the nearest 4 KB increment.</li>
+<li><strong>Calculate Capacity Units:</strong> The rounded total is
+divided by 4 KB and then multiplied by 0.5 (for eventual
+consistency).</li>
+</ol>
+<p>For example, if a query returns 10 items that total 6 KB in
+aggregate:</p>
+<ul>
+<li>The 6 KB total is rounded up to the next 4 KB boundary: 8 KB.</li>
+<li>8 KB divided by 4 KB equals two 4 KB chunks.</li>
+<li>At 0.5 RCU per 4 KB chunk, the query consumes 1.0 RCU.</li>
+</ul>
+<h3 id="impact-of-projected-attributes">Impact of Projected
+Attributes</h3>
+<p>Only attributes projected into the GSI contribute to the item size
+calculation. When an index is defined, it uses one of three projection
+types:</p>
+<ul>
+<li><strong>KEYS_ONLY:</strong> Only index keys and base table primary
+keys are stored. This results in the smallest item size and lowest read
+unit consumption.</li>
+<li><strong>INCLUDE:</strong> Specified non-key attributes are stored
+alongside the keys.</li>
+<li><strong>ALL:</strong> All attributes from the base table are
+replicated to the index, resulting in the largest item sizes and higher
+consumed capacity per query.</li>
+</ul>
+<h3 id="impact-of-filter-expressions">Impact of Filter Expressions</h3>
+<p>If a query includes a <code>FilterExpression</code>, the read units
+consumed do not decrease. DynamoDB evaluates all items matching the
+partition key and sort key conditions <em>before</em> applying the
+filter. The capacity consumed reflects the total size of all evaluated
+items prior to filtering, not just the filtered results returned to the
+client.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-calculates-read-units-for-gsi-queries';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

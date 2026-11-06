@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB CloudWatch Metrics: System vs User Errors - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB integrates natively with Amazon CloudWatch to monitor database performance, throughput, and operational health. To differentiate between internal AWS failures and client-side application faults, CloudWatch provides two primary metrics: Sys">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-cloud-watch-metrics-system-vs-user-errors">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB CloudWatch Metrics: System vs User Errors - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-cloud-watch-metrics-system-vs-user-errors" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB integrates natively with Amazon CloudWatch to monitor database performance, throughput, and operational health. To differentiate between internal AWS failures and client-side application faults, CloudWatch provides two primary metrics: Sys" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-cloudwatch-metrics-system-vs-user-errors">DynamoDB
+CloudWatch Metrics: System vs User Errors</h1>
+<p>Amazon DynamoDB integrates natively with Amazon CloudWatch to monitor
+database performance, throughput, and operational health. To
+differentiate between internal AWS failures and client-side application
+faults, CloudWatch provides two primary metrics:
+<code>SystemErrors</code> for 5xx-level service failures and
+<code>UserErrors</code> for 4xx-level client issues. Understanding the
+distinction between these metrics allows engineering teams to accurately
+diagnose issues, configure effective alarms, and maintain resilient data
+layers.</p>
+<h2 id="the-systemerrors-metric">The <code>SystemErrors</code>
+Metric</h2>
+<p>The <code>SystemErrors</code> metric tracks the number of requests to
+DynamoDB that generate an HTTP 500 series status code (typically
+<code>HTTP 500 Internal Server Error</code>).</p>
+<ul>
+<li><strong>Cause:</strong> These errors represent internal issues
+within the DynamoDB service itself, such as transient infrastructure
+faults, internal network partitions, or service unavailability.</li>
+<li><strong>Responsibility:</strong> AWS is responsible for resolving
+the root cause of these errors.</li>
+<li><strong>Resolution:</strong> Client applications should implement
+exponential backoff with jitter to retry failed operations
+automatically. In production environments, the baseline for
+<code>SystemErrors</code> should ideally be zero; any sustained increase
+warrants setting a CloudWatch Alarm and contacting AWS Support if
+automated retries fail.</li>
+</ul>
+<h2 id="the-usererrors-metric">The <code>UserErrors</code> Metric</h2>
+<p>The <code>UserErrors</code> metric measures requests to DynamoDB that
+result in an HTTP 400 series status code (typically
+<code>HTTP 400 Bad Request</code>).</p>
+<ul>
+<li><strong>Cause:</strong> These errors are caused by client-side
+misconfigurations, invalid syntax, or failed constraints. Common
+scenarios include:
+<ul>
+<li><code>ValidationException</code>: Attempting to write an attribute
+with an incorrect data type or exceeding item size limits.</li>
+<li><code>ResourceNotFoundException</code>: Querying a table or index
+that does not exist.</li>
+<li><code>ConditionalCheckFailedException</code>: Writing an item where
+a specified conditional expression evaluates to false.</li>
+<li><code>AccessDeniedException</code>: IAM permission issues preventing
+the identity from reading or writing data.</li>
+</ul></li>
+<li><strong>Responsibility:</strong> The client application developer is
+responsible for resolving these issues.</li>
+<li><strong>Resolution:</strong> Debug application code, verify data
+payloads, ensure correct IAM policies, and adjust query or write
+syntax.</li>
+</ul>
+<h2 id="throttling-considerations">Throttling Considerations</h2>
+<p>While throttled requests also produce an HTTP 400 status code
+(<code>ProvisionedThroughputExceededException</code>), DynamoDB provides
+dedicated metrics for capacity bottlenecks rather than relying solely on
+<code>UserErrors</code>:</p>
+<ul>
+<li><strong><code>ThrottledRequests</code>:</strong> Tracks the total
+number of requests that exceeded the provisioned throughput or
+account-level limits.</li>
+<li><strong><code>ReadThrottleEvents</code> and
+<code>WriteThrottleEvents</code>:</strong> Measure throttling specific
+to read and write activity on base tables and Global Secondary Indexes
+(GSIs).</li>
+</ul>
+<h2 id="summary-comparison">Summary Comparison</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">Attribute</th>
+<th style="text-align: left;"><code>SystemErrors</code></th>
+<th style="text-align: left;"><code>UserErrors</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>HTTP Status Code</strong></td>
+<td style="text-align: left;">500 series (5xx)</td>
+<td style="text-align: left;">400 series (4xx)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Fault Origin</strong></td>
+<td style="text-align: left;">AWS / DynamoDB platform</td>
+<td style="text-align: left;">Client application / Developer</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Common Trigger</strong></td>
+<td style="text-align: left;">Transient AWS service failure</td>
+<td style="text-align: left;">Invalid syntax, failed conditional checks,
+auth failure</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Recommended Action</strong></td>
+<td style="text-align: left;">Implement exponential backoff retries</td>
+<td style="text-align: left;">Fix code logic, payload schema, or IAM
+policies</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Alarm Threshold</strong></td>
+<td style="text-align: left;">Low (Alert on &gt; 0 over short
+intervals)</td>
+<td style="text-align: left;">Dynamic threshold or anomalous spike
+alerts</td>
+</tr>
+</tbody>
+</table></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-cloud-watch-metrics-system-vs-user-errors';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB GSI Limitations for Existing Tables - dynamodb</title>
+    <meta name="description" content="Adding a Global Secondary Index (GSI) to an existing Amazon DynamoDB table provides significant query flexibility, but it introduces distinct operational constraints and performance trade-offs. This article outlines the core limitations to consider, inclu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-gsi-limitations-for-existing-tables">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB GSI Limitations for Existing Tables - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-gsi-limitations-for-existing-tables" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Adding a Global Secondary Index (GSI) to an existing Amazon DynamoDB table provides significant query flexibility, but it introduces distinct operational constraints and performance trade-offs. This article outlines the core limitations to consider, inclu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-gsi-limitations-for-existing-tables">DynamoDB GSI
+Limitations for Existing Tables</h1>
+<p>Adding a Global Secondary Index (GSI) to an existing Amazon DynamoDB
+table provides significant query flexibility, but it introduces distinct
+operational constraints and performance trade-offs. This article
+outlines the core limitations to consider, including index creation
+concurrency limits, read and write throughput consumption during
+backfilling, immutability of index schemas, and table-level service
+quotas.</p>
+<h3 id="single-concurrent-index-operation">Single Concurrent Index
+Operation</h3>
+<p>DynamoDB allows only one GSI to be created, updated, or deleted at a
+time per table. If you need to add multiple GSIs to an existing table,
+each index must be created sequentially. The table remains in an
+updating state until the current GSI finishes backfilling and
+transitions from the <code>CREATING</code> state to <code>ACTIVE</code>.
+Any attempt to initiate a second GSI creation while one is underway will
+result in a <code>ResourceInUseException</code>.</p>
+<h3 id="base-table-throughput-consumption">Base Table Throughput
+Consumption</h3>
+<p>When a new GSI is added to an existing table, DynamoDB scans the
+entire base table to backfill data into the new index.</p>
+<ul>
+<li><strong>Read Capacity Units (RCUs):</strong> The backfilling process
+consumes read capacity from the base table. If the base table is using
+Provisioned capacity mode without sufficient headroom, this scan can
+throttle regular application read traffic.</li>
+<li><strong>Write Capacity Units (WCUs):</strong> The GSI must be
+allocated adequate write capacity to absorb the backfill load alongside
+ongoing write operations. If the GSI's write capacity is too low, the
+backfill process slows down significantly, and incoming writes to the
+base table may be throttled to prevent the GSI from falling too far
+behind.</li>
+</ul>
+<h3 id="backfill-duration-and-monitoring">Backfill Duration and
+Monitoring</h3>
+<p>Backfill duration is proportional to the size of the base table and
+the provisioned throughput of both the base table and the GSI. For
+tables containing terabytes of data, backfilling can take several hours
+or even days. During this period:</p>
+<ul>
+<li>The GSI cannot be queried.</li>
+<li>The GSI cannot be modified or deleted until the build phase
+completes or fails.</li>
+<li>Live writes to the base table during the backfill are also
+propagated to the new index, consuming additional GSI write
+capacity.</li>
+</ul>
+<h3 id="immutable-index-definitions">Immutable Index Definitions</h3>
+<p>Once a GSI creation request is submitted, its primary key schema
+(partition key and sort key) and projected attributes cannot be altered.
+If you omit an attribute from the projection list that your queries
+require, or if you select the wrong data type for the index key, the
+index cannot be patched. You must wait for the GSI to become
+<code>ACTIVE</code>, delete it, and create a new GSI with the correct
+schema, restarting the entire backfill process.</p>
+<h3 id="quota-and-size-limits">Quota and Size Limits</h3>
+<ul>
+<li><strong>Maximum GSIs per Table:</strong> By default, DynamoDB
+permits up to 20 GSIs per table. While this soft limit can be increased
+by requesting a quota increase from AWS, high index counts multiply the
+write capacity required for every base table write.</li>
+<li><strong>Item Size Constraints:</strong> While GSIs allow sparse
+indexing (items without the index partition key are ignored), items that
+exceed the 400 KB limit cannot be written to the base table or the
+index. Large projected attribute sets increase storage costs and write
+unit consumption.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-gsi-limitations-for-existing-tables';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Batch Read Capacity for Eventual Consistency - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB determines consumed Read Capacity Units (RCUs) for batch operations by evaluating each requested item individually against standardized size thresholds and the selected consistency model. When executing a BatchGetItem operation with eventu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-batch-read-capacity-for-eventual-consistency">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Batch Read Capacity for Eventual Consistency - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-batch-read-capacity-for-eventual-consistency" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB determines consumed Read Capacity Units (RCUs) for batch operations by evaluating each requested item individually against standardized size thresholds and the selected consistency model. When executing a BatchGetItem operation with eventu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-batch-read-capacity-for-eventual-consistency">DynamoDB
+Batch Read Capacity for Eventual Consistency</h1>
+<p>Amazon DynamoDB determines consumed Read Capacity Units (RCUs) for
+batch operations by evaluating each requested item individually against
+standardized size thresholds and the selected consistency model. When
+executing a <code>BatchGetItem</code> operation with eventual
+consistency—which is the default setting—DynamoDB rounds each retrieved
+item's size up to the next 4 KB boundary and charges 0.5 RCUs per 4 KB
+chunk. This article explains the calculation mechanics, key operational
+rules, and step-by-step examples that govern how DynamoDB meters
+eventual consistency batch reads.</p>
+<h3 id="the-baseline-rcu-definition">The Baseline RCU Definition</h3>
+<p>DynamoDB defines a single Read Capacity Unit based on strongly
+consistent reads:</p>
+<ul>
+<li><strong>Strongly Consistent Read:</strong> Consumes 1 RCU for an
+item up to 4 KB in size.</li>
+<li><strong>Eventually Consistent Read:</strong> Consumes 0.5 RCU for an
+item up to 4 KB in size.</li>
+</ul>
+<p>Because eventual consistency provides a 50% discount compared to
+strong consistency, you get two 4 KB reads per 1 RCU.</p>
+<h3 id="individual-item-evaluation-rule">Individual Item Evaluation
+Rule</h3>
+<p>A critical aspect of <code>BatchGetItem</code> is that DynamoDB does
+not sum the sizes of all items in the batch before calculating consumed
+capacity. Instead, it evaluates each item independently:</p>
+<ol type="1">
+<li><strong>Calculate the size</strong> of the retrieved item (including
+attribute names and values).</li>
+<li><strong>Round up</strong> the item's size to the nearest multiple of
+4 KB.</li>
+<li><strong>Multiply</strong> each 4 KB increment by 0.5 RCU.</li>
+<li><strong>Sum</strong> the resulting RCUs across all successfully
+retrieved items in the batch.</li>
+</ol>
+<p>The formula for each item in an eventually consistent batch read
+is:</p>
+<p><span class="math display">\[\text{RCUs per Item} = \left\lceil
+\frac{\text{Item Size in KB}}{4} \right\rceil \times 0.5\]</span></p>
+<h3 id="calculation-example">Calculation Example</h3>
+<p>Suppose a single <code>BatchGetItem</code> request retrieves three
+items with the following sizes under eventual consistency:</p>
+<ul>
+<li><strong>Item A:</strong> 2.5 KB</li>
+<li><strong>Item B:</strong> 5.8 KB</li>
+<li><strong>Item C:</strong> 9.1 KB</li>
+</ul>
+<p>The capacity is calculated as follows:</p>
+<ul>
+<li><strong>Item A (2.5 KB):</strong> Rounds up to 4 KB. <span
+class="math display">\[\left\lceil \frac{2.5}{4} \right\rceil \times 0.5
+= 1 \times 0.5 = 0.5 \text{ RCU}\]</span></li>
+<li><strong>Item B (5.8 KB):</strong> Rounds up to 8 KB. <span
+class="math display">\[\left\lceil \frac{5.8}{4} \right\rceil \times 0.5
+= 2 \times 0.5 = 1.0 \text{ RCU}\]</span></li>
+<li><strong>Item C (9.1 KB):</strong> Rounds up to 12 KB. <span
+class="math display">\[\left\lceil \frac{9.1}{4} \right\rceil \times 0.5
+= 3 \times 0.5 = 1.5 \text{ RCUs}\]</span></li>
+</ul>
+<p><strong>Total Consumed Capacity:</strong> <span
+class="math inline">\(0.5 + 1.0 + 1.5 = 3.0\text{ RCUs}\)</span>.</p>
+<p>If DynamoDB aggregated the sizes prior to rounding (totaling 17.4 KB,
+rounded to 20 KB), the cost would have been 2.5 RCUs. However, because
+each item is metered in isolation, the total comes to 3.0 RCUs.</p>
+<h3 id="operational-limits-and-edge-cases">Operational Limits and Edge
+Cases</h3>
+<ul>
+<li><strong>Batch Limits:</strong> A <code>BatchGetItem</code> call can
+retrieve up to 100 items or 16 MB of data per request, whichever
+threshold is reached first.</li>
+<li><strong>Unprocessed Keys:</strong> If a table or partition exceeds
+its provisioned read throughput during a batch request, DynamoDB may
+return partial results along with an <code>UnprocessedKeys</code>
+element. DynamoDB only charges RCUs for the items that were successfully
+retrieved; unprocessed keys consume zero capacity until they are sent in
+a subsequent retry request.</li>
+<li><strong>Non-Existent Items:</strong> If a requested primary key does
+not exist in the table, DynamoDB still consumes capacity. The attempt is
+rounded up to 4 KB and charged as 0.5 RCU under eventual
+consistency.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-batch-read-capacity-for-eventual-consistency';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

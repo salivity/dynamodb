@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Stream Retention Window Exceeded - dynamodb</title>
+    <meta name="description" content="When an Amazon DynamoDB Streams consumer falls behind the retention time window, it permanently loses access to unprocessed records, triggering a TrimmedDataAccessException. DynamoDB Streams enforces a strict, non-configurable 24-hour data retention limit">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-stream-retention-window-exceeded">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Stream Retention Window Exceeded - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-stream-retention-window-exceeded" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When an Amazon DynamoDB Streams consumer falls behind the retention time window, it permanently loses access to unprocessed records, triggering a TrimmedDataAccessException. DynamoDB Streams enforces a strict, non-configurable 24-hour data retention limit" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-stream-retention-window-exceeded">DynamoDB Stream
+Retention Window Exceeded</h1>
+<p>When an Amazon DynamoDB Streams consumer falls behind the retention
+time window, it permanently loses access to unprocessed records,
+triggering a <code>TrimmedDataAccessException</code>. DynamoDB Streams
+enforces a strict, non-configurable 24-hour data retention limit. Once
+this window elapses for unread modifications, DynamoDB automatically
+purges the expired records from the stream. Consequently, consumers
+cannot catch up sequentially, leading to silent data gaps or failed
+processing pipelines unless explicit recovery mechanisms are put in
+place.</p>
+<h3 id="the-24-hour-retention-limit">The 24-Hour Retention Limit</h3>
+<p>DynamoDB Streams captures time-ordered sequences of item-level
+modifications in a DynamoDB table. Unlike Amazon Kinesis Data Streams,
+which allows retention periods to be extended up to 365 days, DynamoDB
+Streams hardcodes the data lifespan to exactly 24 hours. Once a record
+reaches the 24-hour mark, it is trimmed and deleted from the stream
+regardless of whether any consumer has read it.</p>
+<h3 id="shard-iterator-expiration-and-exceptions">Shard Iterator
+Expiration and Exceptions</h3>
+<p>Stream consumers track their position using shard iterators. When a
+consumer requests data older than 24 hours:</p>
+<ul>
+<li><strong><code>TrimmedDataAccessException</code> is thrown:</strong>
+The DynamoDB Streams API returns this error when the consumer attempts
+to read from a position that points to already-purged data.</li>
+<li><strong>Shard Iterator Becomes Invalid:</strong> The current shard
+iterator cannot be advanced incrementally. The consumer's standard
+sequential processing loop breaks because the expected starting point no
+longer exists.</li>
+</ul>
+<h3 id="downstream-impact">Downstream Impact</h3>
+<p>The primary consequence is data inconsistency. Because the stream
+records represent table mutations (inserts, updates, deletes), any
+downstream system relying on the stream—such as an Elasticsearch index,
+an analytics data lake, or a secondary database—will miss these
+intermediate states.</p>
+<p>If consumers are not built to gracefully catch
+<code>TrimmedDataAccessException</code>, the consumer application may
+enter a crash loop, continually attempting to read from the expired
+iterator and failing repeatedly.</p>
+<h3 id="handling-and-recovery">Handling and Recovery</h3>
+<p>When a consumer falls behind the retention horizon, manual or
+automated intervention is required to resume processing:</p>
+<ol type="1">
+<li><strong>Re-initializing the Iterator:</strong> The consumer must
+discard the expired shard iterator and request a new one using either
+<code>TRIM_HORIZON</code> (which points to the oldest available,
+non-trimmed record) or <code>LATEST</code> (which skips all backlog and
+processes only new incoming modifications).</li>
+<li><strong>Reconciling Lost Data:</strong> Skipping trimmed records
+creates a data gap. To restore consistency, you must perform a full or
+targeted scan of the underlying DynamoDB table to synchronize the
+downstream target with the current state of the database.</li>
+<li><strong>Handling Deletions:</strong> Because scans of the main table
+only reveal current items, hard-deleted items that were purged from the
+stream cannot be identified via a simple table scan. Reconstructing
+deleted records requires querying backups, point-in-time recovery
+(PITR), or application audit logs.</li>
+</ol>
+<h3 id="prevention-and-monitoring">Prevention and Monitoring</h3>
+<p>To avoid falling behind the retention window:</p>
+<ul>
+<li><strong>Monitor <code>IteratorAgeMilliseconds</code>:</strong> Use
+Amazon CloudWatch to track the <code>IteratorAgeMilliseconds</code>
+metric. Set alarms to trigger alerts well before this value approaches
+86,400,000 milliseconds (24 hours).</li>
+<li><strong>Scale Consumer Capacity:</strong> If using AWS Lambda,
+increase concurrency limits or optimize function execution times. If
+using the Kinesis Client Library (KCL) or custom workers, scale the
+compute fleet horizontally to match the shard count and ingestion
+rate.</li>
+<li><strong>Use Kinesis Data Streams for DynamoDB:</strong> If your
+architecture frequently requires longer backlogs or extended processing
+delays, enable Amazon Kinesis Data Streams for DynamoDB instead of
+native DynamoDB Streams, allowing configurable retention windows of up
+to one year.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-stream-retention-window-exceeded';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

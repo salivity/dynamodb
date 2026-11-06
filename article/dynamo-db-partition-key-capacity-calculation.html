@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Key Capacity Calculation - dynamodb</title>
+    <meta name="description" content="This article explains how Amazon DynamoDB calculates the number of physical partitions needed to support your provisioned capacity and data footprint. It breaks down the mathematical formulas used to estimate partition counts based on Read Capacity Units">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-capacity-calculation">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Key Capacity Calculation - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-capacity-calculation" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how Amazon DynamoDB calculates the number of physical partitions needed to support your provisioned capacity and data footprint. It breaks down the mathematical formulas used to estimate partition counts based on Read Capacity Units" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-partition-key-capacity-calculation">DynamoDB Partition
+Key Capacity Calculation</h1>
+<p>This article explains how Amazon DynamoDB calculates the number of
+physical partitions needed to support your provisioned capacity and data
+footprint. It breaks down the mathematical formulas used to estimate
+partition counts based on Read Capacity Units (RCUs), Write Capacity
+Units (WCUs), and storage thresholds, while clarifying how capacity is
+allocated across logical partition keys.</p>
+<h3 id="the-two-capacity-thresholds">The Two Capacity Thresholds</h3>
+<p>DynamoDB allocates underlying physical partitions based on two
+independent hardware and architecture constraints: total throughput and
+total storage volume. A single physical partition has hard limits:</p>
+<ul>
+<li><strong>Maximum Read Capacity Units:</strong> 3,000 RCUs</li>
+<li><strong>Maximum Write Capacity Units:</strong> 1,000 WCUs</li>
+<li><strong>Maximum Storage Size:</strong> 10 GB of data</li>
+</ul>
+<p>When calculating the required partition count, DynamoDB evaluates
+both the throughput requirements and storage requirements, provisioning
+enough partitions to satisfy whichever metric demands more
+resources.</p>
+<h3 id="the-partition-count-formula">The Partition Count Formula</h3>
+<p>To determine the initial number of physical partitions for a
+provisioned table, DynamoDB calculates two values:</p>
+<ol type="1">
+<li><p><strong>Throughput-driven partitions:</strong> <span
+class="math display">\[\text{Partitions (Throughput)} =
+\frac{\text{Total Provisioned RCU}}{3000} + \frac{\text{Total
+Provisioned WCU}}{1000}\]</span></p></li>
+<li><p><strong>Storage-driven partitions:</strong> <span
+class="math display">\[\text{Partitions (Storage)} = \frac{\text{Total
+Storage in GB}}{10\text{ GB}}\]</span></p></li>
+</ol>
+<p>The final partition count is determined by taking the higher of the
+two values and rounding up to the nearest whole integer:</p>
+<p><span class="math display">\[\text{Total Partitions} = \lceil
+\max(\text{Partitions (Throughput)}, \text{Partitions (Storage)})
+\rceil\]</span></p>
+<p>For example, if an application requires 4,000 RCUs, 2,000 WCUs, and
+stores 15 GB of data:</p>
+<ul>
+<li>Throughput calculation: <span class="math inline">\((4000 / 3000) +
+(2000 / 1000) = 1.33 + 2.0 = 3.33\)</span></li>
+<li>Storage calculation: <span class="math inline">\(15 / 10 =
+1.5\)</span></li>
+<li>The higher value is <span class="math inline">\(3.33\)</span>, which
+rounds up to 4 physical partitions.</li>
+</ul>
+<h3 id="uniform-allocation-across-partitions">Uniform Allocation Across
+Partitions</h3>
+<p>Once DynamoDB computes the required partition count, the total
+table-level provisioned capacity is divided uniformly across all active
+physical partitions:</p>
+<ul>
+<li><strong>RCU per partition:</strong> <span
+class="math inline">\(\frac{\text{Total Provisioned RCU}}{\text{Total
+Partitions}}\)</span></li>
+<li><strong>WCU per partition:</strong> <span
+class="math inline">\(\frac{\text{Total Provisioned WCU}}{\text{Total
+Partitions}}\)</span></li>
+</ul>
+<p>Using the previous example of 4 partitions with 4,000 RCUs and 2,000
+WCUs, each partition receives a baseline allocation of 1,000 RCUs and
+500 WCUs.</p>
+<h3 id="logical-partition-keys-vs-physical-partitions">Logical Partition
+Keys vs. Physical Partitions</h3>
+<p>DynamoDB uses an internal hash function (based on MD5) on the item's
+logical partition key value to generate an integer that determines which
+physical partition will store that item.</p>
+<p>Multiple logical partition keys inevitably map to the same physical
+partition. Because provisioned capacity is distributed evenly at the
+physical partition level, all logical partition keys sharing a physical
+partition compete for that partition's assigned slice of RCU and WCU. If
+a single logical key receives disproportionate traffic, it cannot
+naturally exceed the hard physical partition ceiling of 1,000 WCUs or
+3,000 RCUs.</p>
+<h3 id="adaptive-capacity-handling">Adaptive Capacity Handling</h3>
+<p>To manage uneven traffic distribution across partition keys without
+requiring manual re-calculation, DynamoDB employs Adaptive Capacity.
+This mechanism detects imbalanced workloads and automatically
+reallocates unused throughput from quiet partitions to active
+partitions. If sustained high throughput on a specific partition key
+exceeds normal allocation, DynamoDB can automatically split the physical
+partition to isolate hot partition keys, recalculating and increasing
+the partition count dynamically.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-key-capacity-calculation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

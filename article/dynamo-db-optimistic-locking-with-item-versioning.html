@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Optimistic Locking with Item Versioning - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages item versioning and concurrent updates through optimistic locking, a strategy that prevents simultaneous writes from overwriting one another without locking database records. This article explains the mechanics of optimistic lockin">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-optimistic-locking-with-item-versioning">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Optimistic Locking with Item Versioning - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-optimistic-locking-with-item-versioning" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages item versioning and concurrent updates through optimistic locking, a strategy that prevents simultaneous writes from overwriting one another without locking database records. This article explains the mechanics of optimistic lockin" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-optimistic-locking-with-item-versioning">DynamoDB
+Optimistic Locking with Item Versioning</h1>
+<p>Amazon DynamoDB manages item versioning and concurrent updates
+through optimistic locking, a strategy that prevents simultaneous writes
+from overwriting one another without locking database records. This
+article explains the mechanics of optimistic locking in DynamoDB,
+detailing how a dedicated version attribute works alongside conditional
+writes to detect conflicts, how application clients handle update
+failures, and how high-level SDK tools automate this process.</p>
+<h2 id="the-concept-of-optimistic-locking">The Concept of Optimistic
+Locking</h2>
+<p>Optimistic locking assumes that conflicts between concurrent
+transactions are infrequent. Instead of locking a record during a read
+operation (pessimistic locking), DynamoDB permits any client to read and
+update an item. The database verifies the item's integrity only at the
+moment the write is committed by ensuring the item has not been altered
+since it was last fetched.</p>
+<h2 id="the-version-attribute-workflow">The Version Attribute
+Workflow</h2>
+<p>DynamoDB does not maintain historical copies of items natively for
+versioning; instead, it tracks the state of an item using a designated
+numerical or timestamp attribute (commonly named
+<code>version</code>).</p>
+<p>The standard update lifecycle proceeds through four steps:</p>
+<ol type="1">
+<li><p><strong>Read the Item:</strong> The client reads the target item,
+retrieving its current data and its <code>version</code> attribute value
+(for example, <code>version = 1</code>).</p></li>
+<li><p><strong>Modify the Item Locally:</strong> The client prepares the
+necessary updates in memory.</p></li>
+<li><p><strong>Execute a Conditional Write:</strong> The client issues
+an <code>UpdateItem</code> or <code>PutItem</code> request accompanied
+by a <code>ConditionExpression</code>. The condition checks that the
+item's current <code>version</code> in the database matches the version
+read in step 1:</p>
+<pre><code>ConditionExpression: &quot;version = :currentVersion&quot;</code></pre>
+<p>In the same request, the client increments the version:</p>
+<pre><code>UpdateExpression: &quot;SET version = :nextVersion, attributeName = :newValue&quot;</code></pre></li>
+<li><p><strong>Evaluate the Condition:</strong> DynamoDB checks the
+condition atomically before applying the write. If the condition
+evaluates to true, the write succeeds, and <code>version</code> becomes
+<code>2</code>.</p></li>
+</ol>
+<h2 id="handling-collisions-and-exceptions">Handling Collisions and
+Exceptions</h2>
+<p>If another process modifies the item between the initial read and the
+conditional write, the item's version attribute in DynamoDB will already
+be incremented. When the second write attempt arrives with the outdated
+version check, DynamoDB rejects the operation and returns a
+<code>ConditionalCheckFailedException</code> (HTTP status code 400).</p>
+<p>When this error occurs:</p>
+<ul>
+<li>The write transaction is aborted, leaving the existing database item
+unchanged.</li>
+<li>The client application intercepts the exception.</li>
+<li>The standard resolution pattern requires the client to fetch the
+newly updated item, re-apply the business logic with the latest data,
+and attempt the conditional write again using the updated version
+number.</li>
+</ul>
+<h2 id="native-sdk-support">Native SDK Support</h2>
+<p>While optimistic locking can be constructed manually using raw
+<code>ConditionExpression</code> statements, several AWS SDKs provide
+built-in abstractions to automate this logic:</p>
+<ul>
+<li><strong>Java (DynamoDB Enhanced Client):</strong> Developers can
+annotate an attribute with <code>@DynamoDbVersionAttribute</code>. The
+SDK automatically reads the version, applies the conditional check on
+writes, increments the number, and throws an exception on mismatch.</li>
+<li><strong>Python (PynamoDB / custom wrappers):</strong> Object-mapper
+libraries often provide automatic version attributes that inject the
+condition check into <code>save()</code> operations.</li>
+</ul>
+<p>By relying on conditional writes and monotonically increasing version
+attributes, DynamoDB provides strong consistency and transactional
+integrity without incurring the latency and throughput bottlenecks
+associated with distributed resource locking.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-optimistic-locking-with-item-versioning';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

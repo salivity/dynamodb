@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB DAX Caches Queries vs Gets - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Accelerator (DAX) optimizes read workloads by managing two separate in-memory caches: the Item Cache and the Query Cache. While point lookups (key-value gets) operate through the Item Cache to retrieve individual records with real-time wri">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-dax-caches-queries-vs-gets">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB DAX Caches Queries vs Gets - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-dax-caches-queries-vs-gets" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Accelerator (DAX) optimizes read workloads by managing two separate in-memory caches: the Item Cache and the Query Cache. While point lookups (key-value gets) operate through the Item Cache to retrieve individual records with real-time wri" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-dax-caches-queries-vs-gets">How DynamoDB DAX Caches
+Queries vs Gets</h1>
+<p>Amazon DynamoDB Accelerator (DAX) optimizes read workloads by
+managing two separate in-memory caches: the Item Cache and the Query
+Cache. While point lookups (key-value gets) operate through the Item
+Cache to retrieve individual records with real-time write-through
+invalidation, search-based read operations (queries and scans) leverage
+the Query Cache to store entire result sets. Understanding how these two
+caching layers interact is critical to designing efficient,
+cost-effective, and consistent architectures with DynamoDB.</p>
+<h3 id="the-item-cache-key-value-gets">The Item Cache: Key-Value
+Gets</h3>
+<p>The Item Cache handles point-lookup API operations, specifically
+<code>GetItem</code> and <code>BatchGetItem</code>.</p>
+<ul>
+<li><strong>Storage and Indexing:</strong> Data is stored as individual
+items indexed strictly by their primary keys (partition key, or
+partition key plus sort key).</li>
+<li><strong>Cache Read Flow:</strong> When an application issues a
+<code>GetItem</code> request, DAX checks the Item Cache. If the key
+exists (cache hit), DAX returns the item immediately with microsecond
+latency. If the key does not exist (cache miss), DAX fetches the item
+from DynamoDB, writes it to the Item Cache, and returns it to the
+client.</li>
+<li><strong>Cache Invalidation on Writes:</strong> The Item Cache
+maintains write-through consistency. When data is modified via DAX using
+<code>PutItem</code>, <code>UpdateItem</code>, or
+<code>DeleteItem</code>, DAX writes the update to DynamoDB and
+immediately updates or invalidates the corresponding item in the Item
+Cache.</li>
+<li><strong>Eviction Policy:</strong> Items remain in the cache until
+they expire based on the configured Time to Live (TTL) or are evicted
+under memory pressure using a Least Recently Used (LRU) algorithm.</li>
+</ul>
+<h3 id="the-query-cache-queries-and-scans">The Query Cache: Queries and
+Scans</h3>
+<p>The Query Cache handles collection-based operations, specifically
+<code>Query</code> and <code>Scan</code>.</p>
+<ul>
+<li><strong>Storage and Indexing:</strong> Instead of caching individual
+primary keys, the Query Cache stores the parameter sets of the request
+(the partition key condition, sort key condition, filter expressions,
+attributes, index names) mapped directly to the resulting list of
+items.</li>
+<li><strong>Cache Read Flow:</strong> When a <code>Query</code> or
+<code>Scan</code> is executed, DAX evaluates whether the exact set of
+request parameters exists in the Query Cache. If matched, it returns the
+cached result set. If not, DAX executes the operation against DynamoDB,
+stores the resulting list in the Query Cache, and sends it to the
+application.</li>
+<li><strong>Cache Invalidation on Writes:</strong> Unlike the Item
+Cache, the Query Cache is <strong>not</strong> updated or invalidated
+when write operations (<code>PutItem</code>, <code>UpdateItem</code>,
+<code>DeleteItem</code>) occur. Because calculating which queries are
+affected by an individual write is computationally expensive, DAX relies
+exclusively on the TTL to expire entries in the Query Cache, or LRU
+eviction when memory limits are reached. Consequently, queries may
+return stale data if underlying items are updated before the query's TTL
+expires.</li>
+</ul>
+<h3 id="key-architectural-differences">Key Architectural
+Differences</h3>
+<ul>
+<li><strong>Cross-Cache Isolation:</strong> The Item Cache and Query
+Cache do not populate or invalidate each other. Running a
+<code>Query</code> that returns ten items does not warm the Item Cache
+for those individual primary keys. Conversely, updating an item via
+<code>PutItem</code> updates the Item Cache, but any matching queries
+cached in the Query Cache will continue serving the previous result set
+until their TTL expires.</li>
+<li><strong>Staleness and Consistency:</strong> Applications heavily
+reliant on <code>Query</code> or <code>Scan</code> through DAX must be
+designed to tolerate eventual consistency and potential staleness
+governed by the Query Cache TTL. Point lookups via <code>GetItem</code>
+provide stronger consistency guarantees when updates pass through the
+DAX cluster.</li>
+<li><strong>TTL Configuration:</strong> DAX allows distinct TTL
+configurations for the Item Cache and the Query Cache. Setting a lower
+TTL on the Query Cache is a standard practice to mitigate the impact of
+stale query results while maintaining a longer TTL on the Item Cache for
+predictable key-value access.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-dax-caches-queries-vs-gets';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

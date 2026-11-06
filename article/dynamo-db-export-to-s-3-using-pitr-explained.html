@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Export to S3 Using PITR Explained - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB allows you to export table data directly to Amazon S3 without consuming read capacity units (RCU) or degrading production workloads by leveraging Point-in-Time Recovery (PITR). This article details the underlying architecture and step-by-s">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-export-to-s-3-using-pitr-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Export to S3 Using PITR Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-export-to-s-3-using-pitr-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB allows you to export table data directly to Amazon S3 without consuming read capacity units (RCU) or degrading production workloads by leveraging Point-in-Time Recovery (PITR). This article details the underlying architecture and step-by-s" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-export-to-s3-using-pitr-explained">DynamoDB Export to
+S3 Using PITR Explained</h1>
+<p>Amazon DynamoDB allows you to export table data directly to Amazon S3
+without consuming read capacity units (RCU) or degrading production
+workloads by leveraging Point-in-Time Recovery (PITR). This article
+details the underlying architecture and step-by-step process DynamoDB
+uses to fulfill S3 export requests using continuous backups, from
+initial request validation to final data delivery in your S3 bucket.</p>
+<h3 id="continuous-backups-and-pitr-foundation">Continuous Backups and
+PITR Foundation</h3>
+<p>To use the export feature, Point-in-Time Recovery must be enabled on
+the DynamoDB table. When PITR is active, DynamoDB continuously captures
+changes made to your table. Rather than relying solely on periodic
+snapshots, DynamoDB automatically creates incremental system-level
+backups and retains microsecond-precision transaction logs over a
+rolling 35-day window. These continuous backups reside on separate
+storage infrastructure decoupled from the live table partitions.</p>
+<h3 id="the-export-execution-process">The Export Execution Process</h3>
+<p>When you initiate an export request—via the
+<code>ExportTableToPointInTime</code> API, AWS Management Console, or
+AWS CLI—DynamoDB coordinates the export through the following
+stages:</p>
+<h4 id="1-request-validation-and-timestamp-verification">1. Request
+Validation and Timestamp Verification</h4>
+<p>DynamoDB validates the request parameters, including target S3 bucket
+policies, AWS KMS keys, and output format (DynamoDB JSON or Amazon Ion).
+It also validates the requested point-in-time timestamp. The timestamp
+can be set to any point within the continuous backup window (up to 35
+days in the past) down to the latest restorable time (typically within
+the last few minutes).</p>
+<h4 id="2-reading-from-backup-infrastructure-zero-production-impact">2.
+Reading from Backup Infrastructure (Zero Production Impact)</h4>
+<p>Instead of executing table scans against live partitions, the export
+engine reads directly from DynamoDB's internal backup systems. It
+combines the closest base backup with the recorded transaction logs up
+to the precise specified timestamp. Because the read operations occur
+entirely against the continuous backup storage, the export process uses
+zero provisioned or on-demand Read Capacity Units (RCUs) and produces
+zero latency impact on your live application.</p>
+<h4 id="3-distributed-data-processing-and-formatting">3. Distributed
+Data Processing and Formatting</h4>
+<p>DynamoDB distributes the data processing workload across a fleet of
+internal compute workers. These workers:</p>
+<ul>
+<li>Parse the reconstructed table state into the requested serialization
+format (DynamoDB JSON or Amazon Ion).</li>
+<li>Compress data chunks using GZIP to minimize storage size and
+transfer times.</li>
+<li>Split large datasets into multiple parallel output files to optimize
+throughput and facilitate downstream processing (e.g., via Athena,
+Spark, or Hive).</li>
+</ul>
+<h4 id="4-delivery-to-amazon-s3">4. Delivery to Amazon S3</h4>
+<p>The worker fleet uses multipart parallel uploads to write the
+compressed data files into your designated S3 bucket under an
+auto-generated prefix: <code>AWSDynamoDB/&lt;Export-ID&gt;/</code>.</p>
+<p>Once the data transfer completes, DynamoDB writes two manifest files
+to the directory:</p>
+<ul>
+<li><strong><code>manifest-summary.json</code></strong>: Provides
+high-level operational metadata, including export status, start/end
+time, total record count, source table metadata, and output format.</li>
+<li><strong><code>manifest-files.json</code></strong>: Lists each
+individual exported data file along with its S3 location, file size, and
+MD5 checksum for integrity verification.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-export-to-s-3-using-pitr-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>
