@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Expression Attribute Names Limits - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB does not enforce a dedicated numerical quota on the maximum number of expression attribute names you can define in a single request. Instead, the maximum number is governed by indirect architectural limits: the strict 4 KB size limit on in">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-expression-attribute-names-limits">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Expression Attribute Names Limits - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-expression-attribute-names-limits" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB does not enforce a dedicated numerical quota on the maximum number of expression attribute names you can define in a single request. Instead, the maximum number is governed by indirect architectural limits: the strict 4 KB size limit on in" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-expression-attribute-names-limits">DynamoDB Expression
+Attribute Names Limits</h1>
+<p>Amazon DynamoDB does not enforce a dedicated numerical quota on the
+maximum number of expression attribute names you can define in a single
+request. Instead, the maximum number is governed by indirect
+architectural limits: the strict 4 KB size limit on individual
+expression strings, the requirement that every defined expression
+attribute name must be referenced, and DynamoDB's overarching request
+payload limits. Understanding how these intersecting constraints
+interact allows developers to structure their queries and updates
+without triggering validation errors.</p>
+<h3 id="the-4-kb-expression-string-constraint">The 4 KB Expression
+String Constraint</h3>
+<p>The primary practical restriction on the number of expression
+attribute names is DynamoDB's expression size limit. Any individual
+expression string—such as a <code>ProjectionExpression</code>,
+<code>FilterExpression</code>, <code>KeyConditionExpression</code>,
+<code>UpdateExpression</code>, or
+<code>ConditionExpression</code>—cannot exceed 4 KB (4,096 bytes) in
+length.</p>
+<p>Because every expression attribute name defined in the
+<code>ExpressionAttributeNames</code> parameter must appear in at least
+one of these expressions, the maximum number of tokens you can use is
+bounded by how many placeholder tokens can fit inside a 4,096-byte
+string. For example, if you use minimal two-character placeholders
+separated by commas and spaces (e.g., <code>#a, #b, #c</code>), the 4 KB
+limit on a <code>ProjectionExpression</code> effectively caps the number
+of projected attribute names to roughly a few hundred to a thousand
+attributes per request.</p>
+<h3 id="the-strict-usage-requirement">The Strict Usage Requirement</h3>
+<p>DynamoDB does not allow unused entries in the
+<code>ExpressionAttributeNames</code> map. If you declare a placeholder
+(such as <code>"#status": "Status"</code>) in your request parameters
+but do not reference <code>#status</code> in any condition, filter,
+update, or projection expression within that same request, DynamoDB
+rejects the operation with a <code>ValidationException</code> stating
+that the expression attribute names contain unused keys. Consequently,
+you cannot pre-define a large registry of attribute names beyond what
+the immediate request expressions actually reference.</p>
+<h3 id="placeholder-formatting-and-key-lengths">Placeholder Formatting
+and Key Lengths</h3>
+<p>Expression attribute names must adhere to specific formatting
+rules:</p>
+<ul>
+<li>Each placeholder must begin with a pound sign (<code>#</code>).</li>
+<li>Placeholders must be alphanumeric characters or underscores to
+ensure valid syntax across expressions.</li>
+<li>While the substituted attribute name can represent nested attributes
+via document paths (such as using <code>#a.#b</code> to access nested
+map keys), each element in the path must be defined as an individual
+substitution token.</li>
+</ul>
+<h3 id="overall-request-size-limits">Overall Request Size Limits</h3>
+<p>In addition to individual expression length constraints, DynamoDB
+limits the total size of requests:</p>
+<ul>
+<li><strong>Single-item operations</strong> (<code>GetItem</code>,
+<code>PutItem</code>, <code>UpdateItem</code>, <code>DeleteItem</code>):
+The total item size, including attribute names and values, cannot exceed
+400 KB.</li>
+<li><strong>Batch and Transaction operations</strong>:
+<code>BatchGetItem</code> and <code>BatchWriteItem</code> are subject to
+a 16 MB maximum response and request payload size, while transactions
+(<code>TransactWriteItems</code>, <code>TransactGetItems</code>) support
+up to 100 actions or 4 MB of data per operation.</li>
+</ul>
+<h3 id="recommended-best-practices">Recommended Best Practices</h3>
+<p>If an application requires retrieving or updating a massive number of
+distinct attributes that approach expression size limits:</p>
+<ol type="1">
+<li><strong>Avoid Over-Projecting</strong>: If you need nearly all
+attributes in an item, omit the <code>ProjectionExpression</code>
+entirely. Omitting the projection returns the complete item without
+consuming expression string bytes.</li>
+<li><strong>Use Short Substitution Aliases</strong>: Use concise
+placeholders (such as <code>#a1</code>, <code>#a2</code>) instead of
+long, descriptive placeholder labels to conserve the 4 KB expression
+string limit.</li>
+<li><strong>Restructure Nested Maps</strong>: Consolidate deeply nested
+individual attributes into cohesive sub-documents to reduce the number
+of discrete substitution paths required during read and write
+operations.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-expression-attribute-names-limits';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

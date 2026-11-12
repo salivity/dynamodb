@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Enforces HIPAA and PCI-DSS Compliance - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB enforces security compliance standards like the Health Insurance Portability and Accountability Act (HIPAA) and the Payment Card Industry Data Security Standard (PCI-DSS) through a combination of built-in security controls, architectural i">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-hipaa-and-pci-dss-compliance">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Enforces HIPAA and PCI-DSS Compliance - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-hipaa-and-pci-dss-compliance" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB enforces security compliance standards like the Health Insurance Portability and Accountability Act (HIPAA) and the Payment Card Industry Data Security Standard (PCI-DSS) through a combination of built-in security controls, architectural i" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-enforces-hipaa-and-pci-dss-compliance">How DynamoDB
+Enforces HIPAA and PCI-DSS Compliance</h1>
+<p>Amazon DynamoDB enforces security compliance standards like the
+Health Insurance Portability and Accountability Act (HIPAA) and the
+Payment Card Industry Data Security Standard (PCI-DSS) through a
+combination of built-in security controls, architectural isolation, and
+continuous auditing under the AWS Shared Responsibility Model. By
+providing automated encryption at rest and in transit, fine-grained
+access control, isolated networking, and comprehensive audit logging,
+DynamoDB enables organizations to store, process, and manage protected
+health information (PHI) and cardholder data (CHD) while adhering to
+strict regulatory requirements.</p>
+<h2 id="the-shared-responsibility-model">The Shared Responsibility
+Model</h2>
+<p>Compliance in DynamoDB operates under the AWS Shared Responsibility
+Model. AWS is responsible for the security <em>of</em> the cloud, which
+includes the physical infrastructure, hardware, host operating systems,
+and database engine software. The customer is responsible for security
+<em>in</em> the cloud, which involves properly configuring table access,
+defining data handling policies, managing encryption keys, and ensuring
+client-side security.</p>
+<p>AWS undergoes regular third-party audits to maintain compliance
+status:</p>
+<ul>
+<li><strong>HIPAA:</strong> DynamoDB is a HIPAA-eligible service.
+Organizations can sign an AWS Business Associate Addendum (BAA) to store
+and process PHI legally.</li>
+<li><strong>PCI-DSS:</strong> DynamoDB is certified as a PCI-DSS Level 1
+Service Provider, the highest level of assessment for service providers
+handling credit card data.</li>
+</ul>
+<h2 id="data-encryption">Data Encryption</h2>
+<p>Data protection is foundational to both HIPAA and PCI-DSS, which
+mandate that sensitive information be encrypted both while stored and
+while traveling across networks.</p>
+<h3 id="encryption-at-rest">Encryption at Rest</h3>
+<p>DynamoDB provides zero-configuration, default encryption at rest
+using 256-bit Advanced Encryption Standard (AES-256). This protects
+primary table data, local and global secondary indexes, streams, global
+tables, backups, and Point-in-Time Recovery (PITR) data.</p>
+<p>Organizations can choose between three AWS Key Management Service
+(AWS KMS) options to satisfy specific compliance controls:</p>
+<ul>
+<li><strong>AWS Owned Keys:</strong> Default keys managed entirely by
+AWS with no additional cost.</li>
+<li><strong>AWS Managed Keys:</strong> Keys stored in AWS KMS under the
+customer account, allowing audit tracking via AWS CloudTrail.</li>
+<li><strong>Customer Managed Keys (CMKs):</strong> Keys created, owned,
+and managed by the customer. CMKs enable rotation policies, granular key
+usage permissions, and cryptographically verifiable deletion, meeting
+strict PCI-DSS key management requirements (Requirements 3.5 and
+3.6).</li>
+</ul>
+<h3 id="encryption-in-transit">Encryption in Transit</h3>
+<p>DynamoDB endpoints enforce encrypted communication using Transport
+Layer Security (TLS 1.2 or higher). All read and write operations
+between client applications and DynamoDB APIs travel through encrypted
+channels, fulfilling PCI-DSS requirements to protect cardholder data
+transmitted across open, public networks.</p>
+<h2 id="identity-access-and-fine-grained-permissions">Identity, Access,
+and Fine-Grained Permissions</h2>
+<p>Both compliance standards require strict enforcement of the principle
+of least privilege. DynamoDB integrates natively with AWS Identity and
+Access Management (IAM) to enforce access boundaries.</p>
+<h3 id="iam-policies-and-role-based-access">IAM Policies and Role-Based
+Access</h3>
+<p>Access to DynamoDB APIs must be explicitly granted via IAM policies.
+Root access is restricted, and applications must authenticate using
+temporary credentials supplied by IAM roles.</p>
+<h3 id="fine-grained-access-control-fgac">Fine-Grained Access Control
+(FGAC)</h3>
+<p>DynamoDB supports attribute-based and row-level access control. Using
+IAM policy conditions, administrators can restrict a user's or
+application's access down to:</p>
+<ul>
+<li>Specific items based on the partition key value (e.g., ensuring a
+patient can only retrieve records matching their own Patient ID).</li>
+<li>Specific attributes (columns), preventing unauthorized personnel
+from viewing sensitive fields like primary account numbers (PAN) or
+medical diagnosis codes.</li>
+</ul>
+<h2 id="network-isolation-with-amazon-vpc-endpoints">Network Isolation
+with Amazon VPC Endpoints</h2>
+<p>To prevent sensitive data from traversing the public internet,
+DynamoDB supports VPC Endpoints powered by AWS PrivateLink.</p>
+<ul>
+<li><strong>Private Networking:</strong> Applications running within a
+Virtual Private Cloud (VPC) can connect to DynamoDB directly across
+private IP addressing routes.</li>
+<li><strong>Endpoint Policies:</strong> Security teams can attach custom
+policies to the VPC endpoint itself, controlling which specific DynamoDB
+tables can be accessed from that network boundary and preventing data
+exfiltration to unauthorized accounts.</li>
+</ul>
+<h2 id="continuous-monitoring-and-audit-logging">Continuous Monitoring
+and Audit Logging</h2>
+<p>PCI-DSS Requirement 10 and HIPAA Security Rules mandate comprehensive
+audit trails for all actions taken on sensitive data. DynamoDB
+integrates with monitoring and logging services to satisfy these
+controls:</p>
+<ul>
+<li><strong>AWS CloudTrail:</strong> Automatically captures all
+administrative API actions (such as <code>CreateTable</code>,
+<code>UpdateTable</code>, or policy changes) with user identity,
+timestamps, source IP, and request parameters. CloudTrail can also log
+data-plane events (such as <code>PutItem</code> or <code>GetItem</code>)
+to maintain an exact audit trail of data access.</li>
+<li><strong>Amazon CloudWatch:</strong> Monitors database metrics,
+connection attempts, and unauthorized access failures in real time.
+Alarms can be configured to trigger automated responses or notify
+security personnel of suspicious activities.</li>
+<li><strong>AWS Config:</strong> Continuously monitors the configuration
+of DynamoDB tables to ensure compliance with predefined organizational
+baselines, such as verifying that encryption at rest and PITR are
+perpetually active.</li>
+</ul>
+<h2 id="data-resilience-and-recovery">Data Resilience and Recovery</h2>
+<p>Both HIPAA and PCI-DSS require business continuity and disaster
+recovery plans to ensure data is not lost or corrupted. DynamoDB
+addresses this through:</p>
+<ul>
+<li><strong>Automatic Multi-AZ Replication:</strong> Data is
+synchronously replicated across three Availability Zones within an AWS
+Region.</li>
+<li><strong>Point-in-Time Recovery (PITR):</strong> Provides continuous
+backups with per-second granularity, enabling restoration of data to any
+point within the preceding 35 days to mitigate accidental deletion or
+ransomware attacks.</li>
+<li><strong>On-Demand Backups:</strong> Allows the creation of full,
+long-term backups without performance degradation, aiding in regulatory
+archival requirements.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-enforces-hipaa-and-pci-dss-compliance';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modeling One-to-Many Relationships in DynamoDB - dynamodb</title>
+    <meta name="description" content="Modeling one-to-many (1:N) relationships in Amazon DynamoDB requires moving away from relational normalization and designing around specific application access patterns. Depending on the cardinality of the relationship, the volume of data, and how the dat">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/modeling-one-to-many-relationships-in-dynamo-db">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Modeling One-to-Many Relationships in DynamoDB - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/modeling-one-to-many-relationships-in-dynamo-db" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Modeling one-to-many (1:N) relationships in Amazon DynamoDB requires moving away from relational normalization and designing around specific application access patterns. Depending on the cardinality of the relationship, the volume of data, and how the dat" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="modeling-one-to-many-relationships-in-dynamodb">Modeling
+One-to-Many Relationships in DynamoDB</h1>
+<p>Modeling one-to-many (1:N) relationships in Amazon DynamoDB requires
+moving away from relational normalization and designing around specific
+application access patterns. Depending on the cardinality of the
+relationship, the volume of data, and how the data is queried, DynamoDB
+offers several distinct strategies: embedding data directly, using item
+collections via composite primary keys, leveraging Global Secondary
+Indexes (GSIs), and denormalization. This guide outlines these core
+patterns to help you implement efficient, scalable data models.</p>
+<h2 id="1-embedded-lists-or-maps-document-type">1. Embedded Lists or
+Maps (Document Type)</h2>
+<p>Embedding represents the simplest way to model a one-to-many
+relationship by storing the "many" items inside a List or Map attribute
+directly within the parent item.</p>
+<ul>
+<li><strong>When to use:</strong> Use this approach for bounded
+relationships where the number of child items is small and predictable
+(e.g., a user with up to five shipping addresses), and the child data is
+always read alongside the parent.</li>
+<li><strong>Limitations:</strong> DynamoDB enforces a strict 400 KB
+limit per item. If the number of child items grows indefinitely or if
+individual children need to be queried or updated frequently in
+isolation, this pattern becomes inefficient and risks hitting size
+limits.</li>
+</ul>
+<h2 id="2-item-collections-via-composite-primary-keys">2. Item
+Collections via Composite Primary Keys</h2>
+<p>An item collection is a group of items that share the same Partition
+Key (PK) but have different Sort Keys (SK). This is the standard
+single-table design approach for unbounded or large one-to-many
+relationships.</p>
+<ul>
+<li><strong>How it works:</strong>
+<ul>
+<li>The parent item uses the entity ID for the PK (e.g.,
+<code>PK: ORDER#101</code>) and a static or type-based SK (e.g.,
+<code>SK: METADATA</code>).</li>
+<li>Each child item shares the parent's PK (e.g.,
+<code>PK: ORDER#101</code>) but uses a unique identifier for the SK
+(e.g., <code>SK: ITEM#A</code>, <code>SK: ITEM#B</code>).</li>
+</ul></li>
+<li><strong>Querying:</strong> You can retrieve the parent and all
+related child records in a single round-trip using the
+<code>Query</code> API on the partition key. You can also fetch only the
+parent, or a specific subset of children, by applying the
+<code>begins_with()</code> expression on the Sort Key.</li>
+<li><strong>When to use:</strong> Ideal when the number of child items
+is unbounded, or when you need to fetch the parent and its children
+together efficiently.</li>
+</ul>
+<h2 id="3-global-secondary-indexes-gsi-with-parent-referencing">3.
+Global Secondary Indexes (GSI) with Parent Referencing</h2>
+<p>When child items need their own independent primary key in the base
+table, you can model the relationship by referencing the parent's ID in
+an attribute and projecting it via a Global Secondary Index (GSI).</p>
+<ul>
+<li><strong>How it works:</strong>
+<ul>
+<li>In the base table, each child item has its own primary key (e.g.,
+<code>PK: ITEM#A</code>).</li>
+<li>The child item includes a reference attribute containing the parent
+ID (e.g., <code>OrderId: ORDER#101</code>).</li>
+<li>Create a GSI where <code>OrderId</code> serves as the GSI Partition
+Key.</li>
+</ul></li>
+<li><strong>Querying:</strong> Querying the GSI using
+<code>OrderId = ORDER#101</code> returns all children related to that
+parent.</li>
+<li><strong>When to use:</strong> Best suited for cases where child
+items are queried independently of the parent by their own unique
+identifiers, or when the base table schema cannot accommodate a shared
+partition key.</li>
+</ul>
+<h2 id="4-denormalization-and-duplication">4. Denormalization and
+Duplication</h2>
+<p>In read-heavy architectures where joining or secondary querying
+introduces unwanted read units or latency, denormalizing parent data
+across child records is an effective pattern.</p>
+<ul>
+<li><strong>How it works:</strong> Commonly accessed parent attributes
+(such as an author's name or a product's title) are duplicated directly
+onto each child record (such as comments or order line items).</li>
+<li><strong>When to use:</strong> Use when the duplicated data rarely
+changes, and child records are frequently read in isolation while
+requiring context from the parent.</li>
+<li><strong>Trade-offs:</strong> Updating the duplicated data requires
+updating multiple items, leading to higher write costs and eventual
+consistency considerations.</li>
+</ul>
+<h2 id="choosing-the-right-approach">Choosing the Right Approach</h2>
+<p>To select the most efficient pattern:</p>
+<ol type="1">
+<li><strong>Check cardinality:</strong> If the child count is small and
+fixed, use <strong>Embedded Lists</strong>.</li>
+<li><strong>Evaluate read patterns:</strong> If you frequently need both
+the parent and children simultaneously, use <strong>Item
+Collections</strong>.</li>
+<li><strong>Evaluate child lookups:</strong> If children are accessed
+individually by their own IDs, use a <strong>Global Secondary
+Index</strong>.</li>
+<li><strong>Assess mutation rates:</strong> If parent data is immutable
+or rarely updated, apply <strong>Denormalization</strong> to optimize
+read performance.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/modeling-one-to-many-relationships-in-dynamo-db';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

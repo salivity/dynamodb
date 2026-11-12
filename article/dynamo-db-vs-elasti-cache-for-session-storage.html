@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB vs ElastiCache for Session Storage - dynamodb</title>
+    <meta name="description" content="While Amazon ElastiCache is frequently the default choice for caching user sessions due to its sub-millisecond in-memory speeds, Amazon DynamoDB is often the better architectural choice when applications require strict data durability, truly serverless sc">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-vs-elasti-cache-for-session-storage">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB vs ElastiCache for Session Storage - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-vs-elasti-cache-for-session-storage" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="While Amazon ElastiCache is frequently the default choice for caching user sessions due to its sub-millisecond in-memory speeds, Amazon DynamoDB is often the better architectural choice when applications require strict data durability, truly serverless sc" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-vs-elasticache-for-session-storage">DynamoDB vs
+ElastiCache for Session Storage</h1>
+<p>While Amazon ElastiCache is frequently the default choice for caching
+user sessions due to its sub-millisecond in-memory speeds, Amazon
+DynamoDB is often the better architectural choice when applications
+require strict data durability, truly serverless scaling, global
+replication, or granular query capabilities. This article outlines the
+specific scenarios where choosing DynamoDB over ElastiCache for session
+management provides greater reliability, reduced operational complexity,
+and lower infrastructure costs.</p>
+<h3 id="1-requirements-for-high-durability-and-persistence">1.
+Requirements for High Durability and Persistence</h3>
+<p>ElastiCache stores data in memory. While Redis supports persistence
+features like Append Only Files (AOF) and snapshots, node failures or
+cluster restarts can still risk data loss or dropped user sessions.
+DynamoDB automatically replicates data across three Availability Zones
+(AZs) on durable solid-state storage. If your application handles
+high-value user sessions—such as financial workflows, multi-step
+checkout carts, or secure single-sign-on (SSO) states where session loss
+degrades business operations—DynamoDB guarantees that session data
+survives infrastructure failures.</p>
+<h3 id="2-fully-serverless-operations-with-zero-maintenance">2. Fully
+Serverless Operations with Zero Maintenance</h3>
+<p>ElastiCache clusters require management of node types, cluster
+topology, memory thresholds, patching windows, and scaling policies.
+Even with ElastiCache Serverless, there are baseline resource
+allocations to track. DynamoDB with On-Demand capacity mode is entirely
+serverless:</p>
+<ul>
+<li>There are no clusters, instances, or connections to provision.</li>
+<li>It scales instantaneously to absorb sudden traffic spikes without
+pre-warming.</li>
+<li>You do not need to manage connection pooling or redis-specific
+connection limits at the application tier.</li>
+</ul>
+<h3 id="3-native-active-active-multi-region-applications">3. Native
+Active-Active Multi-Region Applications</h3>
+<p>Applications deployed globally often require user sessions to be
+accessible across multiple AWS regions for low-latency access and
+regional disaster recovery. ElastiCache for Redis supports Global
+Datastore, but it operates on a primary-replica architecture where
+secondary regions are read-only.</p>
+<p>DynamoDB Global Tables provide fully managed, multi-region,
+active-active replication. A user can write a session in Europe and read
+or update that same session in North America with automated conflict
+resolution, eliminating the need to route write traffic back to a
+primary region.</p>
+<h3 id="4-cost-efficiency-for-variable-or-low-traffic-workloads">4. Cost
+Efficiency for Variable or Low-Traffic Workloads</h3>
+<p>ElastiCache instances incur continuous hourly charges regardless of
+whether requests are actively being processed. For applications with
+unpredictable, seasonal, or intermittent traffic patterns (such as
+internal corporate portals or development environments), running
+dedicated ElastiCache clusters results in idle spend. DynamoDB's
+On-Demand pricing charges strictly per read and write request. Combined
+with native Time to Live (TTL)—which automatically purges expired
+sessions at zero throughput cost—DynamoDB provides a
+pay-for-what-you-use model that significantly undercuts ElastiCache for
+non-continuous traffic.</p>
+<h3 id="5-advanced-querying-and-user-session-auditing">5. Advanced
+Querying and User Session Auditing</h3>
+<p>Key-value in-memory caches make querying by attributes other than the
+exact session key difficult and computationally expensive. If an
+application must query sessions by criteria such as <code>UserId</code>,
+<code>DeviceType</code>, or creation date, DynamoDB is the superior
+choice. Through Global Secondary Indexes (GSIs), DynamoDB allows you
+to:</p>
+<ul>
+<li>Look up and invalidate all active sessions for a specific user upon
+password reset.</li>
+<li>Enforce device-limiting policies (e.g., maximum two concurrent
+sessions per account).</li>
+<li>Audit active sessions across an enterprise user base without
+scanning the entire database.</li>
+</ul>
+<h3 id="decision-summary">Decision Summary</h3>
+<p>Choose <strong>Amazon ElastiCache</strong> if your workload demands
+sub-millisecond latency, handles hundreds of thousands of read requests
+per second on identical sessions, and treats session data as transient.
+Choose <strong>Amazon DynamoDB</strong> when session persistence is
+mandatory, operations must be fully serverless, multi-region write
+replication is required, or the traffic pattern makes dedicated
+in-memory clusters cost-prohibitive.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-vs-elasti-cache-for-session-storage';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

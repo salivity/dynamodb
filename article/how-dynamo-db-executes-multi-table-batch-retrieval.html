@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Executes Multi-Table Batch Retrieval - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB allows applications to fetch multiple items across different tables in a single network round trip using the BatchGetItem API operation. This article breaks down the internal mechanics of multi-table batch retrieval, covering how DynamoDB">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-multi-table-batch-retrieval">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Executes Multi-Table Batch Retrieval - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-multi-table-batch-retrieval" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB allows applications to fetch multiple items across different tables in a single network round trip using the BatchGetItem API operation. This article breaks down the internal mechanics of multi-table batch retrieval, covering how DynamoDB" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-executes-multi-table-batch-retrieval">How DynamoDB
+Executes Multi-Table Batch Retrieval</h1>
+<p>Amazon DynamoDB allows applications to fetch multiple items across
+different tables in a single network round trip using the
+<code>BatchGetItem</code> API operation. This article breaks down the
+internal mechanics of multi-table batch retrieval, covering how DynamoDB
+disaggregates the request, queries underlying storage partitions in
+parallel, calculates capacity unit consumption, and manages partial
+failures through unprocessed keys.</p>
+<h3 id="the-anatomy-of-a-multi-table-request">The Anatomy of a
+Multi-Table Request</h3>
+<p>A <code>BatchGetItem</code> call accepts a <code>RequestItems</code>
+map where keys represent table names, and values define the primary keys
+of the items to retrieve alongside optional projection expressions and
+consistency settings. A single batch call can retrieve up to 100 items
+and a maximum of 16 MB of data across any number of tables in the same
+AWS Region and account.</p>
+<h3 id="request-routing-and-disaggregation">Request Routing and
+Disaggregation</h3>
+<p>When an application issues a <code>BatchGetItem</code> request, it
+lands on a DynamoDB Request Router (a stateless fleet layer). The router
+inspects the <code>RequestItems</code> payload and performs the
+following sequence:</p>
+<ol type="1">
+<li><strong>Schema Validation and Authentication:</strong> The router
+validates credentials, ensures the requester has
+<code>dynamodb:BatchGetItem</code> permissions for every specified
+table, and verifies that the requested keys match the primary key
+schemas of their respective tables.</li>
+<li><strong>Decomposition:</strong> The request is split internally into
+individual sub-requests grouped by table and partition key.</li>
+<li><strong>Partition Location Lookup:</strong> DynamoDB checks an
+internal partition map cache to determine which storage partition nodes
+host the requested primary keys.</li>
+</ol>
+<h3 id="concurrent-execution-across-storage-nodes">Concurrent Execution
+Across Storage Nodes</h3>
+<p>DynamoDB does not process items or tables sequentially. Instead, the
+Request Router executes read operations in parallel across the
+underlying storage nodes:</p>
+<ul>
+<li><strong>Independent Storage Dispatches:</strong> Sub-requests
+targeting different tables—or different partitions within the same
+table—are dispatched concurrently via internal asynchronous remote
+procedure calls (RPCs).</li>
+<li><strong>Isolation of Table Workloads:</strong> Physical storage
+partitions for Table A operate completely independently of those for
+Table B. A high-latency partition or heavy load on one table does not
+stall reads targeted at partitions of a different table.</li>
+<li><strong>Consistency Application:</strong> Each table in the batch
+can have its own consistency model defined (eventually consistent by
+default, or strongly consistent). The storage nodes enforce the
+designated consistency level on a per-table basis.</li>
+</ul>
+<h3 id="capacity-unit-consumption">Capacity Unit Consumption</h3>
+<p>Read capacity units (RCUs) are calculated and consumed independently
+per table, not aggregated across the batch:</p>
+<ul>
+<li>Each item retrieved consumes capacity units based on its table's
+billing mode (Provisioned or On-Demand) and whether strongly consistent
+(1 RCU per 4 KB) or eventually consistent (0.5 RCU per 4 KB) reads were
+requested.</li>
+<li>If Table A runs out of provisioned throughput, it experiences
+throttling, but this does not deduct capacity from or immediately
+throttle Table B.</li>
+</ul>
+<h3 id="response-aggregation-and-handling-partial-failures">Response
+Aggregation and Handling Partial Failures</h3>
+<p>Once storage nodes respond, the Request Router compiles the items
+back into a structured dictionary matching the format of the original
+request:</p>
+<ul>
+<li><strong>Responses Object:</strong> Items that were successfully
+retrieved are grouped under their respective table names in the
+<code>Responses</code> map.</li>
+<li><strong>UnprocessedKeys:</strong> If a subset of items cannot be
+read due to partition throttling, throughput exhaustion, or reaching the
+overall 16 MB response payload limit, DynamoDB does not fail the entire
+transaction. Instead, the successfully retrieved items are returned, and
+the remaining item keys are placed in the <code>UnprocessedKeys</code>
+block.</li>
+<li><strong>Retry Protocol:</strong> The client application is
+responsible for inspecting the <code>UnprocessedKeys</code> element in
+the response and retrying those specific keys, typically using an
+exponential backoff algorithm.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-multi-table-batch-retrieval';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

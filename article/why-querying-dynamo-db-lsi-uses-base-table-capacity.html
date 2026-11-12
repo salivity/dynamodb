@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Why Querying DynamoDB LSI Uses Base Table Capacity - dynamodb</title>
+    <meta name="description" content="Querying a Local Secondary Index (LSI) in Amazon DynamoDB consumes read capacity from the base table because LSIs do not have their own allocated throughput and share the same physical storage partitions as the base table. This article breaks down the arc">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/why-querying-dynamo-db-lsi-uses-base-table-capacity">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Why Querying DynamoDB LSI Uses Base Table Capacity - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/why-querying-dynamo-db-lsi-uses-base-table-capacity" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Querying a Local Secondary Index (LSI) in Amazon DynamoDB consumes read capacity from the base table because LSIs do not have their own allocated throughput and share the same physical storage partitions as the base table. This article breaks down the arc" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="why-querying-dynamodb-lsi-uses-base-table-capacity">Why Querying
+DynamoDB LSI Uses Base Table Capacity</h1>
+<p>Querying a Local Secondary Index (LSI) in Amazon DynamoDB consumes
+read capacity from the base table because LSIs do not have their own
+allocated throughput and share the same physical storage partitions as
+the base table. This article breaks down the architectural reasons
+behind this shared throughput model, explains how DynamoDB manages LSI
+read operations, and details why fetching non-projected attributes
+introduces additional capacity costs from the base table.</p>
+<h3 id="shared-capacity-architecture">Shared Capacity Architecture</h3>
+<p>Unlike Global Secondary Indexes (GSIs), which maintain independent
+read and write capacity settings, a Local Secondary Index relies
+entirely on the provisioned or on-demand capacity of its base table.
+DynamoDB does not allow you to configure separate Read Capacity Units
+(RCUs) or Write Capacity Units (WCUs) for an LSI. Every read, write,
+update, or delete operation that involves an LSI draws directly from the
+base table’s throughput pool.</p>
+<h3 id="partition-colocation">Partition Colocation</h3>
+<p>An LSI must use the same partition key as the base table, differing
+only by sort key. Because both the base table items and the index
+entries share the exact same partition key, DynamoDB stores them
+together in the same physical storage partition, referred to as an item
+collection. Since the physical infrastructure serving requests to the
+LSI is the same infrastructure serving the base table, DynamoDB meters
+the operations against the single shared capacity pool assigned to that
+partition.</p>
+<h3 id="the-cost-of-projected-vs-non-projected-attributes">The Cost of
+Projected vs. Non-Projected Attributes</h3>
+<p>When querying an LSI, the amount of base table capacity consumed
+depends on the attributes requested and the index's projection type:</p>
+<ul>
+<li><strong>Projected Attributes:</strong> If the query requests only
+attributes that are projected into the LSI (via <code>KEYS_ONLY</code>,
+<code>INCLUDE</code>, or <code>ALL</code>), DynamoDB reads the data
+directly from the index. The base table still incurs the RCU cost, but
+the cost is calculated strictly based on the size of the index entry
+(rounded up to the nearest 4 KB).</li>
+<li><strong>Non-Projected Attributes (Base Table Fetch):</strong> If a
+query requests attributes that were not projected into the LSI, DynamoDB
+must perform an automatic lookup back to the base table to fetch the
+missing data. This results in two reads: one against the LSI to find the
+matching keys, and a second read against the base table to retrieve the
+full item. This operation significantly increases base table RCU
+consumption and adds latency to the query.</li>
+</ul>
+<h3 id="read-consistency-impact">Read Consistency Impact</h3>
+<p>LSIs support both eventually consistent reads and strongly consistent
+reads, unlike GSIs which only support eventually consistent reads. If
+you request a strongly consistent read when querying an LSI, DynamoDB
+consumes one full RCU per 4 KB of data read directly from the base
+table's capacity allocation. Eventually consistent reads consume half
+that amount (0.5 RCU per 4 KB), but both pull directly from the base
+table's limits.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/why-querying-dynamo-db-lsi-uses-base-table-capacity';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

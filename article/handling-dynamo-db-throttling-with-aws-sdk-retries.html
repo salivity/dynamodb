@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handling DynamoDB Throttling with AWS SDK Retries - dynamodb</title>
+    <meta name="description" content="This article explains how the AWS SDK automatically manages Amazon DynamoDB throttling errors through its built-in retry mechanisms and backoff algorithms. When applications exceed provisioned read or write throughput limits, DynamoDB throttles incoming r">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/handling-dynamo-db-throttling-with-aws-sdk-retries">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Handling DynamoDB Throttling with AWS SDK Retries - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/handling-dynamo-db-throttling-with-aws-sdk-retries" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article explains how the AWS SDK automatically manages Amazon DynamoDB throttling errors through its built-in retry mechanisms and backoff algorithms. When applications exceed provisioned read or write throughput limits, DynamoDB throttles incoming r" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="handling-dynamodb-throttling-with-aws-sdk-retries">Handling
+DynamoDB Throttling with AWS SDK Retries</h1>
+<p>This article explains how the AWS SDK automatically manages Amazon
+DynamoDB throttling errors through its built-in retry mechanisms and
+backoff algorithms. When applications exceed provisioned read or write
+throughput limits, DynamoDB throttles incoming requests. Understanding
+how the SDK's retry strategy functions allows developers to build
+resilient cloud applications without manually writing repetitive
+error-handling routines.</p>
+<h2 id="the-built-in-retry-strategy">The Built-In Retry Strategy</h2>
+<p>The primary AWS SDK feature responsible for handling DynamoDB
+throttling errors is the <strong>Retry Strategy</strong> (implemented
+via the SDK's Retry Handler or client retry middleware).</p>
+<p>When DynamoDB throttles a request, it returns a 400-level HTTP error
+such as <code>ProvisionedThroughputExceededException</code>,
+<code>ThrottlingException</code>, or <code>RequestLimitExceeded</code>.
+The AWS SDK intercepts these specific transient errors before surfacing
+them to the application layer, automatically queuing the request for
+execution again.</p>
+<h2 id="exponential-backoff-and-jitter">Exponential Backoff and
+Jitter</h2>
+<p>At the core of the SDK's retry mechanism is an <strong>exponential
+backoff with jitter</strong> algorithm.</p>
+<ul>
+<li><strong>Exponential Backoff:</strong> The client increases the wait
+time between consecutive retry attempts exponentially (for example,
+50ms, 100ms, 200ms, 400ms). This prevents a client from continuously
+overwhelming an already overloaded DynamoDB partition.</li>
+<li><strong>Jitter:</strong> The SDK introduces a randomized variation
+(full or decorrelated jitter) into the sleep duration. Jitter prevents
+the "thundering herd" problem, where multiple clients receive throttling
+errors at the same time and attempt retries in synchronized waves.</li>
+</ul>
+<h2 id="aws-sdk-retry-modes">AWS SDK Retry Modes</h2>
+<p>Modern versions of the AWS SDK (such as AWS SDK for Python/Boto3,
+Java SDK v2, and JavaScript SDK v3) offer configurable retry modes:</p>
+<ol type="1">
+<li><strong>Standard Mode:</strong> The default mode for most SDKs. It
+uses exponential backoff with jitter and implements a retry quota (a
+token bucket algorithm). If retries fail repeatedly, the quota is
+drained, causing the SDK to fail fast rather than continuing to consume
+resources.</li>
+<li><strong>Adaptive Mode:</strong> Designed specifically for
+high-throughput, traffic-heavy workloads like DynamoDB. In addition to
+standard retries, adaptive mode introduces client-side rate limiting. It
+dynamically measures error rates and slows down outgoing requests to
+match the capacity DynamoDB can accept, proactively mitigating
+throttling before it occurs.</li>
+<li><strong>Legacy Mode:</strong> The older behavior that implements a
+basic retry count with fixed exponential backoff without a retry
+quota.</li>
+</ol>
+<h2 id="configuring-the-retry-behavior">Configuring the Retry
+Behavior</h2>
+<p>While the SDK activates retries by default, developers can customize
+the behavior globally or per client instance.</p>
+<ul>
+<li><strong>Environment Variables:</strong> Set
+<code>AWS_RETRY_MODE=adaptive</code> and
+<code>AWS_MAX_ATTEMPTS=10</code> to adjust behavior across the runtime
+environment.</li>
+<li><strong>Client Configuration:</strong> Define parameters directly in
+code during client instantiation. For example, in JavaScript/TypeScript
+(v3):</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode javascript"><code class="sourceCode javascript"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> { DynamoDBClient } <span class="im">from</span> <span class="st">&quot;@aws-sdk/client-dynamodb&quot;</span><span class="op">;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="kw">const</span> client <span class="op">=</span> <span class="kw">new</span> <span class="fu">DynamoDBClient</span>({</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">region</span><span class="op">:</span> <span class="st">&quot;us-east-1&quot;</span><span class="op">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">maxAttempts</span><span class="op">:</span> <span class="dv">5</span><span class="op">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">retryMode</span><span class="op">:</span> <span class="st">&quot;adaptive&quot;</span><span class="op">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>})<span class="op">;</span></span></code></pre></div>
+<p>Using the built-in retry strategy, particularly in adaptive mode,
+ensures that applications handle DynamoDB capacity spikes smoothly with
+minimal operational intervention.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/handling-dynamo-db-throttling-with-aws-sdk-retries';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

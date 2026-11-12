@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Migration with Parallel Scans and Batch Writes - dynamodb</title>
+    <meta name="description" content="Migrating data structures in Amazon DynamoDB requires specialized strategies due to its distributed, schemaless architecture. This article explains how to execute large-scale schema migrations in DynamoDB by leveraging parallel scans to extract datasets c">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-migration-with-parallel-scans-and-batch-writes">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Migration with Parallel Scans and Batch Writes - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-migration-with-parallel-scans-and-batch-writes" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Migrating data structures in Amazon DynamoDB requires specialized strategies due to its distributed, schemaless architecture. This article explains how to execute large-scale schema migrations in DynamoDB by leveraging parallel scans to extract datasets c" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="dynamodb-migration-with-parallel-scans-and-batch-writes">DynamoDB
+Migration with Parallel Scans and Batch Writes</h1>
+<p>Migrating data structures in Amazon DynamoDB requires specialized
+strategies due to its distributed, schemaless architecture. This article
+explains how to execute large-scale schema migrations in DynamoDB by
+leveraging parallel scans to extract datasets concurrently across
+physical partitions and using batch write operations to ingest
+transformed items efficiently while managing provisioned throughput and
+error handling.</p>
+<h2 id="the-need-for-dynamodb-schema-migrations">The Need for DynamoDB
+Schema Migrations</h2>
+<p>Although DynamoDB is schemaless at the item level, application logic
+dictates a rigid schema. Common migration triggers include adding
+composite keys for new access patterns, reformatting attributes to
+support new Global Secondary Indexes (GSIs), normalizing existing
+fields, or backfilling default values across millions of records.</p>
+<p>Because DynamoDB does not offer a native <code>ALTER TABLE</code>
+statement, migrations generally follow an Extract-Transform-Load (ETL)
+pattern:</p>
+<ol type="1">
+<li>Scan existing items from the source table.</li>
+<li>Transform item attributes in-memory according to the new schema
+design.</li>
+<li>Write the transformed items back to the existing table (in-place) or
+into a newly provisioned table.</li>
+</ol>
+<h2 id="step-1-extracting-data-using-parallel-scans">Step 1: Extracting
+Data Using Parallel Scans</h2>
+<p>A standard <code>Scan</code> operation reads an entire table
+sequentially via a single worker, which quickly becomes an I/O
+bottleneck on large datasets. DynamoDB addresses this through
+<strong>Parallel Scans</strong>, allowing an application to divide the
+table logically into multiple segments and scan them concurrently.</p>
+<h3 id="how-parallel-scans-work">How Parallel Scans Work</h3>
+<p>When issuing a parallel scan, the client application specifies two
+parameters in the API call:</p>
+<ul>
+<li><code>TotalSegments</code>: The total number of parallel workers
+scanning the table simultaneously.</li>
+<li><code>Segment</code>: The specific segment number (zero-indexed)
+that a given worker is responsible for reading.</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;TableName&quot;</span><span class="fu">:</span> <span class="st">&quot;SourceTable&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;TotalSegments&quot;</span><span class="fu">:</span> <span class="dv">8</span><span class="fu">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Segment&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Limit&quot;</span><span class="fu">:</span> <span class="dv">500</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>DynamoDB distributes table data across multiple physical storage
+partitions based on partition key hashes. Parallel scans allow workers
+to target disjoint segments of partitions simultaneously.</p>
+<h3 id="implementing-parallel-scans-efficiently">Implementing Parallel
+Scans Efficiently</h3>
+<ul>
+<li><strong>Worker Sizing:</strong> Match <code>TotalSegments</code> to
+the available compute resources (e.g., AWS Lambda instances, ECS tasks,
+or an AWS Glue job). A common starting point is one segment per 2–4 GB
+of data, or matching the physical partition count.</li>
+<li><strong>Pagination Handling:</strong> Each worker must continue
+scanning its assigned segment using the <code>LastEvaluatedKey</code>
+returned in the response until the response contains no further
+pagination token.</li>
+<li><strong>Rate Limiting:</strong> Adjust the <code>Limit</code>
+parameter and worker count to prevent exceeding the table's Read
+Capacity Units (RCUs), which leads to
+<code>ProvisionedThroughputExceededException</code>.</li>
+</ul>
+<h2 id="step-2-transforming-items-in-memory">Step 2: Transforming Items
+In-Memory</h2>
+<p>Once a segment worker retrieves a page of items:</p>
+<ul>
+<li>The transformation process updates, adds, or deletes attribute
+values.</li>
+<li>Data types can be converted (e.g., converting a numeric timestamp to
+an ISO-8601 string).</li>
+<li>Compound attributes can be generated (e.g., combining
+<code>tenant_id</code> and <code>status</code> into a single partition
+or sort key).</li>
+</ul>
+<p>Transformations occur locally in memory within the worker process
+before buffering items for writing.</p>
+<h2 id="step-3-loading-data-using-batch-writes">Step 3: Loading Data
+Using Batch Writes</h2>
+<p>Writing items individually using <code>PutItem</code> introduces
+excessive network overhead and latency. Instead, migrations aggregate
+transformed items and flush them using the <code>BatchWriteItem</code>
+API.</p>
+<h3 id="mechanics-of-batchwriteitem">Mechanics of
+<code>BatchWriteItem</code></h3>
+<ul>
+<li><strong>Payload Limits:</strong> A single
+<code>BatchWriteItem</code> call can contain up to 25
+<code>PutRequest</code> or <code>DeleteRequest</code> actions, with a
+maximum aggregate payload size of 16 MB.</li>
+<li><strong>Atomic Processing:</strong> The operation does not execute
+as a single transaction; individual item writes succeed or fail
+independently.</li>
+<li><strong>Throughput Optimization:</strong> Grouping writes into
+batches minimizes HTTP request overhead and saturates available Write
+Capacity Units (WCUs) predictably.</li>
+</ul>
+<h3 id="handling-unprocessed-items">Handling Unprocessed Items</h3>
+<p>DynamoDB may reject some items in a batch if the table lacks
+sufficient write throughput or experiences temporary storage partition
+splits. When this occurs, the API response returns an
+<code>UnprocessedItems</code> map.</p>
+<p>A robust migration worker must:</p>
+<ol type="1">
+<li>Check the response for <code>UnprocessedItems</code>.</li>
+<li>Extract the uncommitted write requests.</li>
+<li>Retry those items using an <strong>exponential backoff and
+jitter</strong> algorithm to avoid overwhelming the target table.</li>
+</ol>
+<h2 id="best-practices-for-migration-execution">Best Practices for
+Migration Execution</h2>
+<ul>
+<li><strong>Isolate Capacity:</strong> For live production systems, set
+table capacity mode to <strong>Provisioned</strong> with explicit
+RCU/WCU limits during the migration to prevent background tasks from
+starving real-time application traffic. Alternatively, write to an
+entirely new table.</li>
+<li><strong>Ensure Idempotency:</strong> Design the transformation logic
+so that re-running the migration over the same item multiple times
+yields the exact same state without creating duplicate data or
+corrupting state.</li>
+<li><strong>Dual-Writing:</strong> If migrating to a new table with zero
+downtime, enable dual-writing in the application layer or capture
+real-time changes via <strong>DynamoDB Streams</strong> to replicate
+modifications made while the historical migration job runs.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-migration-with-parallel-scans-and-batch-writes';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudWatch Metric for DynamoDB Write Throttling - dynamodb</title>
+    <meta name="description" content="When an Amazon DynamoDB table exceeds its allocated write capacity, Amazon CloudWatch records these rejected operations so administrators can diagnose performance bottlenecks. The primary CloudWatch metric that indicates a DynamoDB table is throttling wri">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/cloud-watch-metric-for-dynamo-db-write-throttling">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="CloudWatch Metric for DynamoDB Write Throttling - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/cloud-watch-metric-for-dynamo-db-write-throttling" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When an Amazon DynamoDB table exceeds its allocated write capacity, Amazon CloudWatch records these rejected operations so administrators can diagnose performance bottlenecks. The primary CloudWatch metric that indicates a DynamoDB table is throttling wri" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="cloudwatch-metric-for-dynamodb-write-throttling">CloudWatch
+Metric for DynamoDB Write Throttling</h1>
+<p>When an Amazon DynamoDB table exceeds its allocated write capacity,
+Amazon CloudWatch records these rejected operations so administrators
+can diagnose performance bottlenecks. The primary CloudWatch metric that
+indicates a DynamoDB table is throttling write requests is
+<code>WriteThrottleEvents</code>. This article explains how
+<code>WriteThrottleEvents</code> works, details the related metrics you
+should monitor, and outlines how to configure a CloudWatch alarm to
+detect and mitigate DynamoDB write throttling.</p>
+<h2 id="the-primary-metric-writethrottleevents">The Primary Metric:
+WriteThrottleEvents</h2>
+<p>The definitive metric for monitoring throttled write requests in
+DynamoDB is <strong><code>WriteThrottleEvents</code></strong>.</p>
+<p>Published under the <code>AWS/DynamoDB</code> namespace,
+<code>WriteThrottleEvents</code> measures the number of write requests
+that were throttled by DynamoDB because the table or Global Secondary
+Index (GSI) exceeded its provisioned write throughput capacity units
+(WCU).</p>
+<p>Key details of this metric include:</p>
+<ul>
+<li><strong>Metric Name:</strong> <code>WriteThrottleEvents</code></li>
+<li><strong>Namespace:</strong> <code>AWS/DynamoDB</code></li>
+<li><strong>Dimensions:</strong> <code>TableName</code>, and optionally
+<code>GlobalSecondaryIndexName</code></li>
+<li><strong>Standard Statistic:</strong> <code>Sum</code></li>
+<li><strong>Unit:</strong> Count</li>
+</ul>
+<p>Each time a <code>PutItem</code>, <code>UpdateItem</code>,
+<code>DeleteItem</code>, or <code>BatchWriteItem</code> request exceeds
+the available write throughput, DynamoDB denies the request, returns a
+<code>ProvisionedThroughputExceededException</code>, and increments the
+<code>WriteThrottleEvents</code> counter.</p>
+<h2 id="related-throttling-metrics">Related Throttling Metrics</h2>
+<p>While <code>WriteThrottleEvents</code> is the direct indicator for
+write operations, other metrics provide additional context:</p>
+<ul>
+<li><strong><code>ThrottledRequests</code>:</strong> Measures all
+throttled requests (both reads and writes) across the table. It triggers
+when any request returns a 400-series
+<code>ProvisionedThroughputExceededException</code>. While useful for
+general alerting, it does not distinguish between reads and writes.</li>
+<li><strong><code>ConsumedWriteCapacityUnits</code> vs.
+<code>ProvisionedWriteCapacityUnits</code>:</strong> Comparing consumed
+writes against provisioned capacity shows how close traffic is to the
+operational ceiling before throttling occurs.</li>
+</ul>
+<h2 id="how-to-configure-a-cloudwatch-alarm-for-write-throttling">How to
+Configure a CloudWatch Alarm for Write Throttling</h2>
+<p>To catch write throttling as soon as it happens, configure a
+CloudWatch alarm with the following settings:</p>
+<ol type="1">
+<li><strong>Metric Selection:</strong> Select <code>AWS/DynamoDB</code>
+&gt; <code>TableMetrics</code> &gt; <code>WriteThrottleEvents</code> for
+your specific table.</li>
+<li><strong>Statistic:</strong> Choose <code>Sum</code>.</li>
+<li><strong>Period:</strong> Set to <code>1 minute</code> (or
+<code>5 minutes</code> depending on your reporting tolerance).</li>
+<li><strong>Threshold Type:</strong> Static.</li>
+<li><strong>Condition:</strong> <code>Greater than (&gt;) 0</code>.</li>
+<li><strong>Alarm Action:</strong> Configure an Amazon SNS topic to
+notify engineering teams via email, Slack, or PagerDuty.</li>
+</ol>
+<p>Setting the threshold to <code>&gt; 0</code> ensures immediate
+notification whenever a write request is rejected.</p>
+<h2 id="common-causes-of-dynamodb-write-throttles">Common Causes of
+DynamoDB Write Throttles</h2>
+<p>If <code>WriteThrottleEvents</code> triggers an alarm, investigate
+the following typical causes:</p>
+<ul>
+<li><strong>Hot Partition Keys:</strong> DynamoDB allocates throughput
+evenly across underlying storage partitions. If a high volume of writes
+targets a single partition key value, that partition can throttle even
+if total consumed capacity is well below the table's total provisioned
+limit.</li>
+<li><strong>Throttled Global Secondary Indexes:</strong> If a table has
+a GSI with provisioned write capacity lower than the main table, writes
+to the main table will be throttled to prevent the GSI from falling
+behind.</li>
+<li><strong>Sudden Traffic Spikes:</strong> Bursts of write traffic that
+exceed the table's capacity and exhaust its burst capacity (up to 300
+seconds of unused capacity) will trigger throttles.</li>
+</ul>
+<h2 id="remediation-strategies">Remediation Strategies</h2>
+<p>To eliminate write throttling indicated by
+<code>WriteThrottleEvents</code>:</p>
+<ul>
+<li><strong>Enable Auto Scaling:</strong> Set up DynamoDB Auto Scaling
+to dynamically adjust provisioned write capacity units based on
+utilization.</li>
+<li><strong>Switch to On-Demand Capacity Mode:</strong> If write
+workloads are unpredictable or have sudden, sharp spikes, consider
+switching the table billing mode from Provisioned to On-Demand.</li>
+<li><strong>Optimize Key Design:</strong> Ensure partition keys have
+high cardinality to distribute write operations evenly across
+partitions.</li>
+<li><strong>Align GSI Capacity:</strong> Ensure that all GSIs have write
+capacity equal to or greater than the base table's write capacity.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/cloud-watch-metric-for-dynamo-db-write-throttling';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Global Secondary Index Storage Metric - dynamodb</title>
+    <meta name="description" content="Monitoring storage consumption in Amazon DynamoDB is essential for capacity planning, cost management, and architecture optimization. This article details the specific Amazon CloudWatch metric used to track the storage space consumed by DynamoDB Global Se">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-global-secondary-index-storage-metric">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Global Secondary Index Storage Metric - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-global-secondary-index-storage-metric" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Monitoring storage consumption in Amazon DynamoDB is essential for capacity planning, cost management, and architecture optimization. This article details the specific Amazon CloudWatch metric used to track the storage space consumed by DynamoDB Global Se" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-global-secondary-index-storage-metric">DynamoDB Global
+Secondary Index Storage Metric</h1>
+<p>Monitoring storage consumption in Amazon DynamoDB is essential for
+capacity planning, cost management, and architecture optimization. This
+article details the specific Amazon CloudWatch metric used to track the
+storage space consumed by DynamoDB Global Secondary Indexes (GSIs),
+explains how it differs from primary table storage metrics, and provides
+key operational details regarding its reporting intervals and
+dimensions.</p>
+<h3 id="the-cloudwatch-metric-globalsecondaryindexsizebytes">The
+CloudWatch Metric: GlobalSecondaryIndexSizeBytes</h3>
+<p>The CloudWatch metric that tracks the amount of storage space
+consumed by a DynamoDB Global Secondary Index is
+<strong><code>GlobalSecondaryIndexSizeBytes</code></strong>.</p>
+<p>This metric reports the total size, in bytes, of the specified Global
+Secondary Index. Because a GSI contains a separate projection of the
+base table's data, its storage footprint is calculated and billed
+independently of the base table.</p>
+<h3 id="key-metric-specifications">Key Metric Specifications</h3>
+<p>To properly query and interpret
+<code>GlobalSecondaryIndexSizeBytes</code>, use the following
+parameters:</p>
+<ul>
+<li><strong>Namespace:</strong> <code>AWS/DynamoDB</code></li>
+<li><strong>Metric Name:</strong>
+<code>GlobalSecondaryIndexSizeBytes</code></li>
+<li><strong>Units:</strong> Bytes</li>
+<li><strong>Dimensions:</strong>
+<ul>
+<li><code>TableName</code>: The name of the parent DynamoDB table.</li>
+<li><code>GlobalSecondaryIndexName</code>: The name of the specific
+Global Secondary Index you are monitoring.</li>
+</ul></li>
+</ul>
+<h3 id="reporting-frequency-and-behavior">Reporting Frequency and
+Behavior</h3>
+<p>Like the base table storage metric (<code>TableSizeBytes</code>),
+<code>GlobalSecondaryIndexSizeBytes</code> is not updated in real
+time.</p>
+<ul>
+<li><strong>Update Interval:</strong> DynamoDB updates this metric
+approximately once every six hours.</li>
+<li><strong>Statistic:</strong> The recommended statistic to view is
+<strong>Average</strong> or <strong>Maximum</strong> over a long
+evaluation period (such as 6 hours or 1 day) due to the infrequent
+reporting schedule.</li>
+</ul>
+<h3 id="differences-between-table-and-gsi-storage-metrics">Differences
+Between Table and GSI Storage Metrics</h3>
+<p>Understanding how DynamoDB breaks down storage across its metrics
+ensures accurate monitoring:</p>
+<ol type="1">
+<li><strong><code>TableSizeBytes</code></strong>: Reflects the size of
+the base table along with any Local Secondary Indexes (LSIs). It does
+<strong>not</strong> include the data stored within GSIs.</li>
+<li><strong><code>GlobalSecondaryIndexSizeBytes</code></strong>:
+Reflects only the data size of the specific GSI, including indexed
+attributes, projected non-key attributes, and secondary index structural
+overhead (approximately 100 bytes per item).</li>
+</ol>
+<h3 id="how-to-access-the-metric">How to Access the Metric</h3>
+<p>You can view <code>GlobalSecondaryIndexSizeBytes</code> through
+several AWS interfaces:</p>
+<ul>
+<li><strong>AWS Management Console:</strong> Open the CloudWatch
+console, navigate to <strong>Metrics</strong> &gt;
+<strong>DynamoDB</strong> &gt; <strong>Table and Secondary Index
+Metrics</strong>, and select the metric associated with your table and
+GSI name.</li>
+<li><strong>AWS CLI:</strong> Run the
+<code>aws cloudwatch get-metric-data</code> command, specifying the
+<code>AWS/DynamoDB</code> namespace,
+<code>GlobalSecondaryIndexSizeBytes</code> metric, and the required
+<code>TableName</code> and <code>GlobalSecondaryIndexName</code>
+dimensions.</li>
+<li><strong>CloudWatch Alarms:</strong> You can create alarms based on
+this metric to alert your team when a GSI exceeds expected storage
+thresholds, helping avoid unexpected storage charges.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-global-secondary-index-storage-metric';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

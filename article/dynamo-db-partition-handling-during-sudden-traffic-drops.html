@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Partition Handling During Sudden Traffic Drops - dynamodb</title>
+    <meta name="description" content="This article examines how Amazon DynamoDB manages partition assignments, provisioned throughput allocation, and partition lifecycles when an application experiences a sudden drop in traffic under provisioned throughput mode. It covers the mechanics of thr">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-partition-handling-during-sudden-traffic-drops">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Partition Handling During Sudden Traffic Drops - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-partition-handling-during-sudden-traffic-drops" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how Amazon DynamoDB manages partition assignments, provisioned throughput allocation, and partition lifecycles when an application experiences a sudden drop in traffic under provisioned throughput mode. It covers the mechanics of thr" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1
+id="dynamodb-partition-handling-during-sudden-traffic-drops">DynamoDB
+Partition Handling During Sudden Traffic Drops</h1>
+<p>This article examines how Amazon DynamoDB manages partition
+assignments, provisioned throughput allocation, and partition lifecycles
+when an application experiences a sudden drop in traffic under
+provisioned throughput mode. It covers the mechanics of throughput
+distribution across partitions, how burst capacity behaves during idle
+periods, the operational realities of partition merging, and the
+potential throttling risks associated with scaling down capacity across
+a high partition count.</p>
+<h3 id="throughput-division-across-partitions">Throughput Division
+Across Partitions</h3>
+<p>DynamoDB distributes provisioned Read Capacity Units (RCUs) and Write
+Capacity Units (WCUs) equally across all physical partitions supporting
+a table. Partitions are created automatically as a table grows beyond 10
+GB in size, exceeds 1,000 WCUs, or exceeds 3,000 RCUs.</p>
+<p>When traffic suddenly drops, the physical partitions do not
+immediately disappear. Instead, the allocated capacity per partition
+remains unchanged unless the provisioned capacity settings are
+modified—either manually or through DynamoDB Auto Scaling. If your table
+has 10 partitions and 5,000 RCUs, each partition retains an allocation
+of 500 RCUs, regardless of whether incoming request rates fall to
+zero.</p>
+<h3 id="idle-capacity-and-the-burst-pool">Idle Capacity and the Burst
+Pool</h3>
+<p>During a sudden traffic decline, DynamoDB partitions become largely
+idle. When a partition does not consume its allocated provisioned
+throughput, DynamoDB banks unused capacity into a burst pool.</p>
+<p>Each partition can accumulate up to 300 seconds (5 minutes) of unused
+read and write capacity. If sudden traffic drops are followed by
+intermittent, spiky requests, this accumulated burst capacity allows
+individual partitions to momentarily exceed their allocated provisioned
+limit without throttling. However, burst capacity is an ephemeral buffer
+managed in the background; it should not be relied upon as a permanent
+scaling mechanism.</p>
+<h3 id="the-downscaling-effect-and-throughput-dilution">The Downscaling
+Effect and Throughput Dilution</h3>
+<p>If DynamoDB Auto Scaling is enabled, a prolonged drop in traffic will
+trigger a scale-down event to reduce costs. Auto Scaling reduces the
+table’s total provisioned RCUs and WCUs based on your target utilization
+metrics.</p>
+<p>Because provisioned throughput is divided evenly across all existing
+partitions, scaling down the total throughput decreases the capacity
+slice assigned to each individual partition. For example, if a table
+that scaled out to 20 partitions drops from 10,000 WCUs to 200 WCUs,
+each partition's allocated throughput falls from 500 WCUs to just 10
+WCUs.</p>
+<p>If traffic unexpectedly rebounds and targets a single partition (a
+hot partition) before the table can scale back up, that partition can
+quickly become throttled because its dedicated capacity threshold is now
+significantly lower.</p>
+<h3 id="partition-merging-behavior">Partition Merging Behavior</h3>
+<p>Historically, DynamoDB partitions only split and never merged; once a
+table created new partitions, that partition count remained
+permanent.</p>
+<p>DynamoDB now includes automated partition merging capabilities in the
+background. When table size or provisioned throughput decreases
+significantly and remains low, DynamoDB gradually consolidates adjacent,
+underutilized physical partitions.</p>
+<p>This process is not instantaneous. In the event of a sudden traffic
+drop, partition merging will not execute immediately to match the
+instant change in workload. Merging is an asynchronous background
+maintenance task designed for long-term topology optimization. In the
+immediate aftermath of a sudden traffic cliff, the table retains its
+existing partition count, and partition assignment for existing data
+remains intact.</p>
+<h3 id="global-secondary-indexes-gsis">Global Secondary Indexes
+(GSIs)</h3>
+<p>The same partition mechanics apply to Global Secondary Indexes
+(GSIs). If write traffic to the base table suddenly drops, write
+consumption on the GSIs will drop proportionally. However, if a GSI was
+heavily partitioned during peak load and its capacity is scaled down
+post-drop, the reduced throughput is equally diluted across all GSI
+partitions. Unbalanced access patterns on the GSI following a sudden
+drop can result in index throttling, which in turn throttles writes to
+the primary table.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-partition-handling-during-sudden-traffic-drops';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

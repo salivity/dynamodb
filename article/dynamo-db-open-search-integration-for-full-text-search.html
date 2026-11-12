@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB OpenSearch Integration for Full-Text Search - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides fast, predictable NoSQL database performance at scale, but it lacks native capabilities for fuzzy matching, relevance ranking, and complex text querying. To implement full-text search over DynamoDB items, teams commonly integrate">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-open-search-integration-for-full-text-search">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB OpenSearch Integration for Full-Text Search - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-open-search-integration-for-full-text-search" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides fast, predictable NoSQL database performance at scale, but it lacks native capabilities for fuzzy matching, relevance ranking, and complex text querying. To implement full-text search over DynamoDB items, teams commonly integrate" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-opensearch-integration-for-full-text-search">DynamoDB
+OpenSearch Integration for Full-Text Search</h1>
+<p>Amazon DynamoDB provides fast, predictable NoSQL database performance
+at scale, but it lacks native capabilities for fuzzy matching, relevance
+ranking, and complex text querying. To implement full-text search over
+DynamoDB items, teams commonly integrate DynamoDB with Amazon OpenSearch
+Service. This guide details how this integration works, covering both
+event-driven custom pipelines and managed zero-ETL approaches, the data
+flow mechanisms, and how search queries are resolved against the primary
+data store.</p>
+<h2 id="the-dual-database-architectural-pattern">The Dual-Database
+Architectural Pattern</h2>
+<p>Integrating DynamoDB with OpenSearch relies on the CQRS (Command
+Query Responsibility Segregation) pattern. DynamoDB remains the primary
+system of record for all create, read, update, and delete (CRUD)
+operations, while OpenSearch serves as a secondary read-only search
+index.</p>
+<p>When data changes occur in DynamoDB, those modifications are
+replicated to OpenSearch asynchronously. The search engine indexes
+specific attributes required for text analysis, autocomplete, stemming,
+and tokenization.</p>
+<hr />
+<h2 id="integration-methods">Integration Methods</h2>
+<p>There are two primary methods to synchronize DynamoDB items to
+OpenSearch:</p>
+<h3 id="1-zero-etl-integration-with-opensearch-ingestion">1. Zero-ETL
+Integration with OpenSearch Ingestion</h3>
+<p>AWS offers a managed, serverless integration using Amazon OpenSearch
+Ingestion (OSI). This approach removes the need to write and maintain
+custom replication code.</p>
+<ul>
+<li><strong>Initial Load:</strong> OpenSearch Ingestion can read a
+point-in-time snapshot of the DynamoDB table to populate historical
+records.</li>
+<li><strong>Continuous Streaming:</strong> The ingestion pipeline
+automatically attaches to DynamoDB Streams to ingest updates in near
+real-time.</li>
+<li><strong>Transformation:</strong> Built-in processors allow mapping,
+dropping unneeded fields, and transforming DynamoDB JSON structures into
+standard OpenSearch documents before indexing.</li>
+</ul>
+<h3 id="2-dynamodb-streams-with-aws-lambda">2. DynamoDB Streams with AWS
+Lambda</h3>
+<p>The traditional, highly customizable approach utilizes DynamoDB
+Streams combined with an AWS Lambda function.</p>
+<ol type="1">
+<li><strong>DynamoDB Streams:</strong> Enable DynamoDB Streams on the
+source table using the <code>NEW_IMAGE</code> or
+<code>NEW_AND_OLD_IMAGES</code> view type to capture the state of items
+after modification.</li>
+<li><strong>Lambda Trigger:</strong> Configure an AWS Lambda function to
+consume records from the stream in batches.</li>
+<li><strong>Data Transformation:</strong> The Lambda function strips
+DynamoDB type descriptors (e.g., converting
+<code>{"title": {"S": "Example"}}</code> to
+<code>{"title": "Example"}</code>).</li>
+<li><strong>Bulk Indexing:</strong> The function uses the OpenSearch
+<code>_bulk</code> API to execute <code>index</code>,
+<code>update</code>, or <code>delete</code> actions corresponding to the
+stream events (<code>INSERT</code>, <code>MODIFY</code>,
+<code>REMOVE</code>).</li>
+</ol>
+<hr />
+<h2 id="querying-and-data-retrieval">Querying and Data Retrieval</h2>
+<p>Once data is synchronized, client applications handle full-text
+search through one of two patterns:</p>
+<h3 id="search-and-retrieve-two-step-fetch">Search and Retrieve
+(Two-Step Fetch)</h3>
+<ol type="1">
+<li>The client executes a full-text query against OpenSearch.</li>
+<li>OpenSearch evaluates relevance, applies text analyzers, and returns
+a paginated list of matching document IDs (the DynamoDB partition and
+sort keys).</li>
+<li>The client calls DynamoDB's <code>BatchGetItem</code> using these
+keys to fetch the full, authoritative, and strongly consistent
+items.</li>
+</ol>
+<p>This pattern minimizes storage costs in OpenSearch by only indexing
+searchable fields and IDs.</p>
+<h3 id="direct-serving-from-opensearch">Direct Serving from
+OpenSearch</h3>
+<p>If the indexed documents contain all attributes required by the
+application view, OpenSearch can serve the response directly without
+querying DynamoDB. This reduces read latency and DynamoDB read capacity
+unit (RCU) consumption, though it introduces eventual consistency delays
+if records are read immediately after an update.</p>
+<hr />
+<h2 id="key-operational-considerations">Key Operational
+Considerations</h2>
+<ul>
+<li><strong>Eventual Consistency:</strong> Synchronization from DynamoDB
+to OpenSearch is asynchronous. Search results typically lag milliseconds
+behind writes to DynamoDB.</li>
+<li><strong>Partial Indexing:</strong> Only index fields required for
+search queries, filtering, or aggregations. Exclude large payloads,
+metadata, and binary attributes to control OpenSearch cluster storage
+and memory consumption.</li>
+<li><strong>Error Handling:</strong> When using AWS Lambda, configure a
+Failure-Destination (such as an SQS Dead-Letter Queue) to capture failed
+bulk indexing requests and prevent stream processing blocks.</li>
+<li><strong>Historical Backfilling:</strong> If migrating an existing
+DynamoDB table without OpenSearch Ingestion, export the table to Amazon
+S3 via DynamoDB's native S3 export, and use an AWS Glue job or batch
+script to populate the OpenSearch index before enabling the stream.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-open-search-integration-for-full-text-search';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

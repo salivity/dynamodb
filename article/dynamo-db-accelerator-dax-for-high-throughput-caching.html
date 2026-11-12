@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Accelerator DAX for High-Throughput Caching - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Accelerator (DAX) is a fully managed, highly available, in-memory caching service engineered to deliver up to a 10x performance improvement for read-intensive, high-throughput workloads on DynamoDB. By sitting directly between applications">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-accelerator-dax-for-high-throughput-caching">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Accelerator DAX for High-Throughput Caching - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-accelerator-dax-for-high-throughput-caching" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Accelerator (DAX) is a fully managed, highly available, in-memory caching service engineered to deliver up to a 10x performance improvement for read-intensive, high-throughput workloads on DynamoDB. By sitting directly between applications" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-accelerator-dax-for-high-throughput-caching">DynamoDB
+Accelerator DAX for High-Throughput Caching</h1>
+<p>Amazon DynamoDB Accelerator (DAX) is a fully managed, highly
+available, in-memory caching service engineered to deliver up to a 10x
+performance improvement for read-intensive, high-throughput workloads on
+DynamoDB. By sitting directly between applications and DynamoDB tables,
+DAX reduces read response times from single-digit milliseconds to
+microseconds while absorbing sudden surges in traffic. This article
+explains how DAX operates as an in-memory cache, how it handles reads
+and writes, and how it optimizes database throughput under extreme
+application loads.</p>
+<h3 id="in-memory-architecture-and-microsecond-latency">In-Memory
+Architecture and Microsecond Latency</h3>
+<p>Standard DynamoDB requests travel over the network directly to
+database storage nodes, executing lookups that typically resolve in
+single-digit milliseconds. For high-frequency systems—such as real-time
+gaming, financial trading, or high-volume e-commerce platforms—those
+milliseconds can compound into severe application latency.</p>
+<p>DAX resolves this by storing frequently accessed data in dynamic RAM
+across a dedicated cluster of nodes. When an application requests an
+item cached in memory, DAX returns it instantly with sub-millisecond
+(microsecond) latency, completely bypassing the DynamoDB storage layer
+and network round-trip overhead.</p>
+<h3 id="dual-caching-mechanism-item-cache-and-query-cache">Dual Caching
+Mechanism: Item Cache and Query Cache</h3>
+<p>DAX utilizes two distinct in-memory structures to handle different
+access patterns:</p>
+<ul>
+<li><strong>Item Cache:</strong> Stores individual items retrieved via
+<code>GetItem</code> and <code>BatchGetItem</code> calls. The item cache
+keys are based on the primary key (partition and optional sort key) of
+the target table. When an item is fetched, DAX evaluates the primary key
+to serve the exact object from memory.</li>
+<li><strong>Query Cache:</strong> Stores the results of
+<code>Query</code> and <code>Scan</code> operations, keyed by the
+specific query parameters and filter expressions. Rather than executing
+multi-item scans across DynamoDB storage, DAX returns the pre-computed
+result set directly from RAM, preserving read throughput during complex
+lookups.</li>
+</ul>
+<p>Each cache maintains its own Time to Live (TTL) policy and utilizes a
+Least Recently Used (LRU) algorithm to evict older data when memory
+limits are reached.</p>
+<h3 id="read-and-write-request-flows">Read and Write Request Flows</h3>
+<p>DAX functions as an inline, request-routed cache that governs both
+read and write operations:</p>
+<ul>
+<li><strong>Read-Through Execution:</strong> When an application issues
+a read request, the DAX client routes the call to the DAX cluster. If
+the data exists in memory (a cache hit), DAX returns it immediately. If
+the data is absent (a cache miss), DAX forwards the request to DynamoDB,
+saves the returned item in its in-memory cache, and hands it back to the
+client.</li>
+<li><strong>Write-Through Execution:</strong> Writes
+(<code>PutItem</code>, <code>UpdateItem</code>, <code>DeleteItem</code>)
+are issued directly through DAX. DAX first writes the data to the target
+DynamoDB table. Once DynamoDB acknowledges the write, DAX updates or
+invalidates the item within its in-memory cache before returning a
+success response to the application. This ensures strong consistency
+between the database and the cache for individual item mutations.</li>
+</ul>
+<h3 id="absorbing-throughput-spikes-and-reducing-costs">Absorbing
+Throughput Spikes and Reducing Costs</h3>
+<p>High-throughput systems often suffer from the "thundering herd"
+problem, where thousands of concurrent clients request identical data
+simultaneously. Without a cache, this behavior rapidly exhausts
+DynamoDB’s provisioned Read Capacity Units (RCUs), leading to
+<code>ProvisionedThroughputExceededException</code> errors or
+significant billing spikes under on-demand scaling.</p>
+<p>DAX acts as a shock absorber. Because reads are served from cluster
+RAM, millions of repetitive read requests hit the cache instead of the
+underlying DynamoDB table. This dramatically reduces the consumed RCUs
+on the database, preventing throttling, ensuring predictable response
+times during traffic spikes, and lowering infrastructure costs.</p>
+<h3 id="seamless-sdk-integration-and-clustering">Seamless SDK
+Integration and Clustering</h3>
+<p>DAX is designed as a drop-in replacement for standard DynamoDB
+access. The DAX SDK adheres strictly to DynamoDB API operations.
+Migrating an application to use DAX requires only changing the DynamoDB
+client initialization endpoint to point to the DAX cluster, requiring no
+rewrites of core query logic.</p>
+<p>For fault tolerance and elastic scaling, DAX runs as a multi-node
+cluster consisting of one primary node and up to nine read replicas
+distributed across multiple Availability Zones. The primary node manages
+write operations and replication, while read replicas distribute the
+in-memory read load horizontally, ensuring sustained high throughput
+even during node failovers.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-accelerator-dax-for-high-throughput-caching';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

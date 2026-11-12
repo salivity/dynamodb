@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Cross-Region Replication Latency Tracking - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Global Tables provide fully managed, active-active cross-region data replication to deliver fast local read and write performance for globally distributed applications. To ensure operational visibility and data consistency across geographi">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-cross-region-replication-latency-tracking">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Cross-Region Replication Latency Tracking - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-cross-region-replication-latency-tracking" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Global Tables provide fully managed, active-active cross-region data replication to deliver fast local read and write performance for globally distributed applications. To ensure operational visibility and data consistency across geographi" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-cross-region-replication-latency-tracking">DynamoDB
+Cross-Region Replication Latency Tracking</h1>
+<p>Amazon DynamoDB Global Tables provide fully managed, active-active
+cross-region data replication to deliver fast local read and write
+performance for globally distributed applications. To ensure operational
+visibility and data consistency across geographic boundaries, DynamoDB
+continuously monitors and tracks cross-region replication latency. This
+article details the underlying mechanisms DynamoDB uses to measure
+replication delays, the metrics it exposes via Amazon CloudWatch, and
+how time synchronization ensures accuracy across regions.</p>
+<h3 id="the-underlying-replication-architecture">The Underlying
+Replication Architecture</h3>
+<p>DynamoDB cross-region replication is built on DynamoDB Streams. When
+an item is written, updated, or deleted in a source table, the
+modification is recorded in an ordered, near-real-time changelog.
+DynamoDB manages background replication fleets that read these change
+records from the source region's stream and apply them asynchronously to
+replica tables in the target regions.</p>
+<p>Because replication is asynchronous, a slight delay occurs between
+the moment an item is committed locally and the moment it is committed
+in a remote replica. Tracking this delay is vital for applications that
+require bounded staleness or need to detect network partition
+events.</p>
+<h3 id="how-replication-latency-is-measured">How Replication Latency Is
+Measured</h3>
+<p>DynamoDB measures replication latency using metadata timestamps
+embedded directly within stream records:</p>
+<ol type="1">
+<li><strong>Write Timestamping:</strong> When a write operation
+completes successfully in the source region, DynamoDB assigns a
+millisecond-precision server-side timestamp indicating when the update
+was committed to storage.</li>
+<li><strong>Transit and Application:</strong> The replication worker
+retrieves the record from the stream and sends it to the target
+region.</li>
+<li><strong>Latency Calculation:</strong> Upon successfully committing
+the update to the target replica table, the target region's replication
+coordinator compares the current system time in the destination region
+with the original timestamp recorded in the source region. The
+difference represents the elapsed replication time.</li>
+</ol>
+<h3 id="clock-synchronization-via-amazon-time-sync-service">Clock
+Synchronization via Amazon Time Sync Service</h3>
+<p>Calculating latency using timestamps generated in different physical
+locations requires synchronized clocks. If clocks between AWS regions
+drift, latency measurements become inaccurate.</p>
+<p>AWS resolves this using the Amazon Time Sync Service. This service
+utilizes a redundant fleet of satellite-connected reference clocks and
+atomic clocks deployed within each AWS region. By keeping host clocks
+synchronized within microsecond-level accuracy to Coordinated Universal
+Time (UTC), DynamoDB ensures that cross-region timestamp comparisons
+accurately reflect true transit and application delays rather than clock
+drift.</p>
+<h3 id="cloudwatch-replicationlatency-metric">CloudWatch
+<code>ReplicationLatency</code> Metric</h3>
+<p>DynamoDB aggregates these latency measurements and publishes them to
+Amazon CloudWatch under the <code>ReplicationLatency</code> metric.</p>
+<ul>
+<li><strong>Dimensions:</strong> The metric is emitted per table and
+split across source and destination regions (e.g.,
+<code>TableName</code>, <code>ReceivingRegion</code>).</li>
+<li><strong>Interpretation:</strong> <code>ReplicationLatency</code>
+represents the elapsed time (expressed in milliseconds) for an item
+updated in a source region to appear in the destination region's
+replica.</li>
+<li><strong>Statistical Tracking:</strong> Because network conditions
+and write volumes vary, latency is evaluated using percentiles (such as
+p90, p99, and maximum) rather than simple averages. Monitoring p99
+latency allows teams to identify transient network congestion or
+throttling events that affect tail-end performance.</li>
+</ul>
+<h3 id="handling-empty-streams-and-idle-periods">Handling Empty Streams
+and Idle Periods</h3>
+<p>When a table experiences low or zero write traffic, calculating
+latency based purely on user data is impossible because no stream
+records exist to measure. To maintain continuous tracking and health
+checks, DynamoDB's internal replication system generates periodic
+heartbeat markers. These internal records traverse the replication
+pipeline like standard writes, ensuring that
+<code>ReplicationLatency</code> remains accurate and updated even during
+periods of low application activity.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-cross-region-replication-latency-tracking';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

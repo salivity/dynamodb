@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Capacity Allocation Across Partitions - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages read and write throughput by distributing capacity across underlying physical storage partitions. While provisioned capacity is fundamentally split evenly among all partitions, DynamoDB utilizes intelligent mechanisms—namely burst">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-capacity-allocation-across-partitions">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Capacity Allocation Across Partitions - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-capacity-allocation-across-partitions" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages read and write throughput by distributing capacity across underlying physical storage partitions. While provisioned capacity is fundamentally split evenly among all partitions, DynamoDB utilizes intelligent mechanisms—namely burst" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-capacity-allocation-across-partitions">DynamoDB
+Capacity Allocation Across Partitions</h1>
+<p>Amazon DynamoDB manages read and write throughput by distributing
+capacity across underlying physical storage partitions. While
+provisioned capacity is fundamentally split evenly among all partitions,
+DynamoDB utilizes intelligent mechanisms—namely burst capacity and
+adaptive capacity—to dynamically redistribute unused throughput to
+disproportionately active partitions. This ensures that uneven workloads
+do not cause unexpected throttling as long as the total table-level
+limits and single-partition physical limits are not exceeded.</p>
+<h2 id="partition-fundamentals-in-dynamodb">Partition Fundamentals in
+DynamoDB</h2>
+<p>DynamoDB tables are divided into physical storage units called
+partitions. Partitions are managed entirely by AWS and are provisioned
+automatically based on two criteria:</p>
+<ul>
+<li><strong>Data Size:</strong> Each partition can hold a maximum of 10
+GB of data.</li>
+<li><strong>Throughput Limits:</strong> A single partition can support a
+maximum of 1,000 Write Capacity Units (WCUs) or 3,000 Read Capacity
+Units (RCUs).</li>
+</ul>
+<p>When a table exceeds either the 10 GB storage threshold or the
+throughput threshold of an individual partition, DynamoDB automatically
+allocates additional partitions to distribute the load.</p>
+<h2 id="initial-capacity-distribution">Initial Capacity
+Distribution</h2>
+<p>When throughput is provisioned for a table, DynamoDB calculates the
+initial allocation on a per-partition basis using a simple formula:</p>
+<p><span class="math display">\[\text{Partition Capacity} =
+\frac{\text{Total Provisioned Capacity}}{\text{Number of
+Partitions}}\]</span></p>
+<p>For example, if a table has 10 partitions and is provisioned with
+1,000 WCUs and 3,000 RCUs, each partition is nominally allocated 100
+WCUs and 300 RCUs.</p>
+<p>If capacity allocation remained strictly static, any partition
+receiving traffic higher than its equal share would experience
+throttling, even if the total table consumption remained well below the
+provisioned threshold. DynamoDB implements two features to prevent this
+issue: burst capacity and adaptive capacity.</p>
+<h2 id="burst-capacity">Burst Capacity</h2>
+<p>DynamoDB reserves a portion of unused capacity to absorb brief spikes
+in traffic. If an application does not consume all of its provisioned
+throughput, DynamoDB retains up to 300 seconds (5 minutes) of unused
+read and write capacity in a burst buffer.</p>
+<p>Partitions that experience sudden, short-lived surges in traffic can
+tap into this burst pool to fulfill requests without throwing a
+<code>ProvisionedThroughputExceededException</code>. However, burst
+capacity is temporary and will deplete quickly if sustained traffic
+exceeds the partition's baseline allocation.</p>
+<h2 id="adaptive-capacity">Adaptive Capacity</h2>
+<p>To handle sustained uneven access patterns (often referred to as "hot
+partitions"), DynamoDB employs <strong>Adaptive Capacity</strong>.
+Adaptive capacity works automatically in the background for all tables
+at no additional cost.</p>
+<h3 id="dynamic-throughput-balancing">Dynamic Throughput Balancing</h3>
+<p>Adaptive capacity monitors the real-time consumption of individual
+partitions. If a specific partition experiences sustained traffic
+exceeding its nominal share, DynamoDB automatically reallocates unused
+throughput from quiet ("cold") partitions to the active ("hot")
+partition.</p>
+<p>As long as the total consumption across all partitions does not
+exceed the overall provisioned capacity of the table, the hot partition
+can consume significantly more than its standard slice of
+throughput.</p>
+<h3 id="partition-splitting-for-hot-keys">Partition Splitting for Hot
+Keys</h3>
+<p>If a single partition experiences intense access targeting a specific
+partition key, adaptive capacity can isolate that key. DynamoDB will
+split the partition, moving the heavily accessed key to its own
+dedicated partition. This prevents a single high-traffic item from
+starving other items of capacity and enables the hot key to utilize up
+to the physical maximum of a single partition (1,000 WCUs or 3,000
+RCUs).</p>
+<h2 id="hard-limits-of-single-partitions">Hard Limits of Single
+Partitions</h2>
+<p>While DynamoDB manages capacity dynamically, it cannot violate
+physical hardware boundaries. Regardless of overall table capacity or
+adaptive redistribution, a single partition key can never exceed:</p>
+<ul>
+<li><strong>1,000 Write Capacity Units (WCUs)</strong> per second</li>
+<li><strong>3,000 Read Capacity Units (RCUs)</strong> per second (or
+6,000 eventually consistent reads)</li>
+</ul>
+<p>If the access pattern on a single partition key surpasses these
+physical boundaries, requests will be throttled regardless of available
+capacity elsewhere in the table.</p>
+<h2 id="capacity-management-in-on-demand-mode">Capacity Management in
+On-Demand Mode</h2>
+<p>In On-Demand capacity mode, DynamoDB does not require provisioned
+throughput settings. Instead, it instantly accommodates workloads up to
+previously reached traffic peaks.</p>
+<p>DynamoDB manages partition allocation in On-Demand mode by
+automatically increasing partition counts as overall volume grows. If
+current traffic exceeds twice the previous peak, DynamoDB automatically
+creates new partitions to scale up capacity while continuing to use
+adaptive capacity to route throughput dynamically to where it is needed
+most.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-capacity-allocation-across-partitions';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

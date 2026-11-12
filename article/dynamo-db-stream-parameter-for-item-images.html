@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Stream Parameter for Item Images - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Streams capture a time-ordered sequence of item-level modifications in a DynamoDB table. This article covers the specific parameter that dictates whether modified item data appears as old images, new images, or both: the StreamViewType set">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-stream-parameter-for-item-images">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Stream Parameter for Item Images - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-stream-parameter-for-item-images" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Streams capture a time-ordered sequence of item-level modifications in a DynamoDB table. This article covers the specific parameter that dictates whether modified item data appears as old images, new images, or both: the StreamViewType set" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-stream-parameter-for-item-images">DynamoDB Stream
+Parameter for Item Images</h1>
+<p>Amazon DynamoDB Streams capture a time-ordered sequence of item-level
+modifications in a DynamoDB table. This article covers the specific
+parameter that dictates whether modified item data appears as old
+images, new images, or both: the <code>StreamViewType</code> setting.
+Understanding this configuration ensures downstream applications receive
+the precise payload needed for processing without incurring unnecessary
+overhead.</p>
+<h2 id="the-streamviewtype-parameter">The StreamViewType Parameter</h2>
+<p>The parameter that controls which images appear in a DynamoDB stream
+is <strong><code>StreamViewType</code></strong>. When enabling DynamoDB
+Streams on a table, <code>StreamViewType</code> determines what
+information is written to the stream record whenever an item is created,
+updated, or deleted.</p>
+<h2 id="supported-streamviewtype-values">Supported StreamViewType
+Values</h2>
+<p>DynamoDB provides four distinct options for the
+<code>StreamViewType</code> parameter:</p>
+<ul>
+<li><strong><code>KEYS_ONLY</code></strong>: Only the key attributes
+(partition key and sort key, if applicable) of the modified item are
+written to the stream record.</li>
+<li><strong><code>NEW_IMAGE</code></strong>: The entire item, as it
+appears immediately after it was modified, is written to the stream
+record.</li>
+<li><strong><code>OLD_IMAGE</code></strong>: The entire item, as it
+appeared immediately before it was modified, is written to the stream
+record.</li>
+<li><strong><code>NEW_AND_OLD_IMAGES</code></strong>: Both the entire
+item prior to modification and the entire item following modification
+are written to the stream record.</li>
+</ul>
+<h2 id="choosing-the-right-setting">Choosing the Right Setting</h2>
+<p>The choice of <code>StreamViewType</code> depends on how downstream
+consumers (such as AWS Lambda, Amazon Kinesis, or custom worker
+services) interact with table changes:</p>
+<ul>
+<li><strong>Audit Logging and History Tracking</strong>: Use
+<code>NEW_AND_OLD_IMAGES</code> when consumers need to compare previous
+states against current states to calculate diffs or track granular field
+changes over time.</li>
+<li><strong>Search Indexing and Cache Invalidation</strong>: Use
+<code>NEW_IMAGE</code> when updates only require syncing the latest
+state to an external search cluster (such as OpenSearch) or a caching
+layer.</li>
+<li><strong>Archiving Deletions</strong>: Use <code>OLD_IMAGE</code> if
+your primary goal is capturing records as they existed right before
+deletion.</li>
+<li><strong>Minimalist Notification Systems</strong>: Use
+<code>KEYS_ONLY</code> when consumers only need an event trigger to
+query the table directly or run a lightweight process without consuming
+payload bandwidth.</li>
+</ul>
+<h2 id="how-to-configure-streamviewtype">How to Configure
+StreamViewType</h2>
+<p><code>StreamViewType</code> is configured at the time a stream is
+enabled. It can be defined using the AWS Management Console, AWS CLI,
+AWS SDKs, or Infrastructure as Code (IaC) tools such as AWS
+CloudFormation or Terraform.</p>
+<h3 id="aws-cli-example">AWS CLI Example</h3>
+<p>When enabling a stream on an existing table via the AWS CLI, specify
+the <code>StreamSpecification</code> object with the desired
+<code>StreamViewType</code>:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> dynamodb update-table <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">--table-name</span> YourTableName <span class="dt">\</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">--stream-specification</span> StreamEnabled=true,StreamViewType=NEW_AND_OLD_IMAGES</span></code></pre></div>
+<h3 id="aws-cloudformation-example">AWS CloudFormation Example</h3>
+<p>In AWS CloudFormation, define the property under
+<code>StreamSpecification</code>:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">Type</span><span class="kw">:</span><span class="at"> AWS::DynamoDB::Table</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">Properties</span><span class="kw">:</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">TableName</span><span class="kw">:</span><span class="at"> YourTableName</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">StreamSpecification</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">StreamViewType</span><span class="kw">:</span><span class="at"> NEW_AND_OLD_IMAGES</span></span></code></pre></div>
+<p>Selecting the appropriate <code>StreamViewType</code> minimizes the
+data processed by downstream stream consumers and guarantees that all
+required item attributes are accessible without additional read
+operations against the primary table.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-stream-parameter-for-item-images';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

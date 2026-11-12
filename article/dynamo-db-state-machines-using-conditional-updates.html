@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB State Machines Using Conditional Updates - dynamodb</title>
+    <meta name="description" content="Implementing state machines in Amazon DynamoDB requires strict enforcement of valid state transitions to prevent race conditions, data corruption, and illegal states. DynamoDB achieves this natively using conditional writes via the ConditionExpression par">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-state-machines-using-conditional-updates">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB State Machines Using Conditional Updates - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-state-machines-using-conditional-updates" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Implementing state machines in Amazon DynamoDB requires strict enforcement of valid state transitions to prevent race conditions, data corruption, and illegal states. DynamoDB achieves this natively using conditional writes via the ConditionExpression par" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-state-machines-using-conditional-updates">DynamoDB
+State Machines Using Conditional Updates</h1>
+<p>Implementing state machines in Amazon DynamoDB requires strict
+enforcement of valid state transitions to prevent race conditions, data
+corruption, and illegal states. DynamoDB achieves this natively using
+conditional writes via the <code>ConditionExpression</code> parameter on
+update and put operations. By validating the current state of an entity
+directly at the storage layer before applying changes, conditional
+updates turn DynamoDB into an atomic, deterministic state engine that
+natively eliminates concurrency issues without external distributed
+locks.</p>
+<h3 id="the-mechanics-of-conditional-state-transitions">The Mechanics of
+Conditional State Transitions</h3>
+<p>DynamoDB operations are inherently atomic at the item level. When a
+client issues an <code>UpdateItem</code> request to alter an entity’s
+status, it can include a <code>ConditionExpression</code> that asserts
+the item's current state matches an allowed predecessor state.</p>
+<p>During execution, DynamoDB locks the item partition, evaluates the
+condition expression against the persisted item, and only applies the
+update if the expression evaluates to true. If the condition evaluates
+to false, the write fails entirely, the item remains untouched, and
+DynamoDB returns a <code>ConditionalCheckFailedException</code>.</p>
+<p>A basic transition from <code>PENDING</code> to
+<code>PROCESSING</code> is structured as follows:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;TableName&quot;</span><span class="fu">:</span> <span class="st">&quot;Orders&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Key&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;OrderId&quot;</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;12345&quot;</span> <span class="fu">}</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;UpdateExpression&quot;</span><span class="fu">:</span> <span class="st">&quot;SET #status = :nextStatus, #updatedAt = :timestamp&quot;</span><span class="fu">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ConditionExpression&quot;</span><span class="fu">:</span> <span class="st">&quot;#status = :expectedStatus&quot;</span><span class="fu">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ExpressionAttributeNames&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;#status&quot;</span><span class="fu">:</span> <span class="st">&quot;Status&quot;</span><span class="fu">,</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;#updatedAt&quot;</span><span class="fu">:</span> <span class="st">&quot;UpdatedAt&quot;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ExpressionAttributeValues&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;:nextStatus&quot;</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;PROCESSING&quot;</span> <span class="fu">},</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;:expectedStatus&quot;</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;PENDING&quot;</span> <span class="fu">},</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;:timestamp&quot;</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;2023-10-27T10:00:00Z&quot;</span> <span class="fu">}</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="supporting-multi-path-transitions">Supporting Multi-Path
+Transitions</h3>
+<p>State machines often permit transitions to a new state from multiple
+valid prior states. For example, a <code>CANCELLED</code> state might be
+reachable from either <code>PENDING</code> or
+<code>PAYMENT_FAILED</code>.</p>
+<p>DynamoDB accommodates this using logical operators (<code>IN</code>,
+<code>OR</code>) inside the <code>ConditionExpression</code>:</p>
+<pre><code>ConditionExpression: &quot;#status IN (:pending, :failed)&quot;</code></pre>
+<p>If an incoming event attempts to cancel an order that has already
+transitioned to <code>SHIPPED</code>, the condition fails immediately,
+preserving state integrity without requiring distributed
+transactions.</p>
+<h3 id="preventing-race-conditions-and-concurrency-conflicts">Preventing
+Race Conditions and Concurrency Conflicts</h3>
+<p>In distributed architectures, multiple consumers often process events
+concurrently for the same entity. Without conditional enforcement, two
+competing processes could read a state simultaneously, compute divergent
+paths, and overwrite each other's updates—a classic "lost update"
+problem.</p>
+<p>Conditional updates resolve this by acting as optimistic concurrency
+control. Because the conditional check and the write occur in a single
+atomic step:</p>
+<ol type="1">
+<li><strong>Process A</strong> and <strong>Process B</strong> both read
+an order in the <code>CREATED</code> state.</li>
+<li>Both attempt to transition the order: Process A to
+<code>APPROVED</code>, Process B to <code>REJECTED</code>.</li>
+<li>Process A's write arrives first; the condition
+<code>#status = :created</code> is met, and the state becomes
+<code>APPROVED</code>.</li>
+<li>Process B's write arrives second; DynamoDB evaluates
+<code>#status = :created</code>, which is now false because the status
+is <code>APPROVED</code>.</li>
+<li>DynamoDB rejects Process B's write with a
+<code>ConditionalCheckFailedException</code>.</li>
+</ol>
+<h3 id="incorporating-version-attributes">Incorporating Version
+Attributes</h3>
+<p>While checking the status attribute alone often suffices for simple
+state machines, complex domains benefit from pairing state checks with
+an incrementing <code>version</code> attribute.</p>
+<pre><code>UpdateExpression: &quot;SET #status = :nextStatus, #version = #version + :inc&quot;
+ConditionExpression: &quot;#status = :expectedStatus AND #version = :expectedVersion&quot;</code></pre>
+<p>This ensures that not only is the state machine progressing through a
+valid sequence, but the process executing the transition is operating on
+the exact snapshot of the entity it originally evaluated, preventing
+out-of-order event application.</p>
+<h3 id="handling-transition-failures-in-application-logic">Handling
+Transition Failures in Application Logic</h3>
+<p>When an operation triggers a
+<code>ConditionalCheckFailedException</code>, the calling application
+must treat this as a signal rather than an unexpected crash. The
+standard remediation pattern involves:</p>
+<ol type="1">
+<li><strong>Catching the Exception:</strong> Catch
+<code>ConditionalCheckFailedException</code> specifically.</li>
+<li><strong>Reloading State:</strong> Fetch the latest version of the
+record from DynamoDB with a strongly consistent read
+(<code>ConsistentRead: true</code>).</li>
+<li><strong>Evaluating Business Rules:</strong> Determine if the
+transition was already completed by a redundant event (idempotency) or
+if the state has moved to an incompatible phase where the incoming
+action must be dropped or sent to a dead-letter queue.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-state-machines-using-conditional-updates';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

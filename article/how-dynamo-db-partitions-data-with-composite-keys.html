@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Partitions Data with Composite Keys - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB manages large-scale data by distributing items across physical storage nodes called partitions. When you define a composite primary key—consisting of a partition key and a sort key—DynamoDB uses a two-step mechanism to place and organize y">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-partitions-data-with-composite-keys">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Partitions Data with Composite Keys - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-partitions-data-with-composite-keys" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB manages large-scale data by distributing items across physical storage nodes called partitions. When you define a composite primary key—consisting of a partition key and a sort key—DynamoDB uses a two-step mechanism to place and organize y" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-partitions-data-with-composite-keys">How DynamoDB
+Partitions Data with Composite Keys</h1>
+<p>Amazon DynamoDB manages large-scale data by distributing items across
+physical storage nodes called partitions. When you define a composite
+primary key—consisting of a partition key and a sort key—DynamoDB uses a
+two-step mechanism to place and organize your records. The partition key
+determines the specific physical partition where the data is stored,
+while the sort key determines the physical order of the data within that
+partition. This article explains the internal hashing mechanism, the
+role of the sort key, partition split behavior, and how composite keys
+affect read and write performance.</p>
+<h3 id="the-mechanics-of-the-partition-key">The Mechanics of the
+Partition Key</h3>
+<p>The first attribute of a composite key is the partition key
+(historically called the hash key). When an application writes an item
+to DynamoDB, the service passes the partition key's value through an
+internal cryptographic hash function.</p>
+<p>The output of this hash function points directly to an internal hash
+ring that maps to a specific physical partition. Because this
+calculation relies exclusively on the partition key value, all items
+that share the exact same partition key value map to the same physical
+partition or set of partitions, completely ignoring the sort key during
+the initial routing phase.</p>
+<h3 id="the-role-of-the-sort-key">The Role of the Sort Key</h3>
+<p>The second attribute of a composite key is the sort key (historically
+called the range key). Once DynamoDB identifies the correct physical
+partition using the partition key's hash, it uses the sort key to store
+the item in sorted order.</p>
+<p>Items sharing the same partition key are stored together as an "item
+collection." Within that collection:</p>
+<ul>
+<li>Data is stored in ascending order based on the sort key's binary
+representation (or numerical order for number types).</li>
+<li>Range queries using operators such as <code>BETWEEN</code>, Begins
+With, <code>&lt;</code>, <code>&gt;</code>, and <code>&lt;=</code> are
+executed efficiently because the related data physically resides next to
+each other on the same storage node.</li>
+</ul>
+<h3 id="how-dynamodb-handles-partition-limits-and-splits">How DynamoDB
+Handles Partition Limits and Splits</h3>
+<p>A single DynamoDB physical partition can hold up to 10 GB of data and
+support a maximum of 1,000 Write Capacity Units (WCUs) or 3,000 Read
+Capacity Units (RCUs). When your table grows beyond these limits,
+DynamoDB automatically provisions additional partitions.</p>
+<p>When composite keys are involved, partition splitting behaves in one
+of two ways:</p>
+<ol type="1">
+<li><strong>Tables without Local Secondary Indexes (LSIs):</strong> If a
+single item collection (items with the identical partition key) exceeds
+10 GB, DynamoDB splits the data across multiple physical partitions
+based on the sort key values. It allocates contiguous sort key ranges to
+different physical nodes to balance the load.</li>
+<li><strong>Tables with Local Secondary Indexes (LSIs):</strong> An item
+collection cannot exceed 10 GB in total size. If the limit is reached,
+DynamoDB rejects further writes to that partition key, returning an
+<code>ItemCollectionSizeLimitExceededException</code>.</li>
+</ol>
+<h3 id="avoiding-hot-partitions-with-composite-keys">Avoiding Hot
+Partitions with Composite Keys</h3>
+<p>Because the partition key alone determines physical data placement,
+choosing an attribute with low cardinality can lead to "hot
+partitions"—scenarios where a single physical partition handles an
+uneven amount of traffic.</p>
+<p>To ensure optimal performance, the partition key should have high
+cardinality (many distinct values, such as <code>user_id</code> or
+<code>device_id</code>), allowing traffic to distribute evenly across
+all physical partitions. The sort key should then be used to model
+relationships or time-series data (such as <code>timestamp</code> or
+<code>order_id</code>) to enable fast, targeted lookups within that
+specific partition.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-partitions-data-with-composite-keys';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

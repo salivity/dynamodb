@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Batch Operations Over Throughput Limits - dynamodb</title>
+    <meta name="description" content="When an Amazon DynamoDB table exceeds its maximum provisioned throughput limit during batch operations, requests are throttled rather than completely dropped. Instead of rolling back the entire operation, DynamoDB partially processes the batch, fulfilling">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-batch-operations-over-throughput-limits">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Batch Operations Over Throughput Limits - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-batch-operations-over-throughput-limits" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When an Amazon DynamoDB table exceeds its maximum provisioned throughput limit during batch operations, requests are throttled rather than completely dropped. Instead of rolling back the entire operation, DynamoDB partially processes the batch, fulfilling" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-batch-operations-over-throughput-limits">DynamoDB Batch
+Operations Over Throughput Limits</h1>
+<p>When an Amazon DynamoDB table exceeds its maximum provisioned
+throughput limit during batch operations, requests are throttled rather
+than completely dropped. Instead of rolling back the entire operation,
+DynamoDB partially processes the batch, fulfilling only the items that
+fall within the available capacity and returning the remaining records
+in the response payload. This article outlines how DynamoDB handles
+throughput exhaustion during <code>BatchWriteItem</code> and
+<code>BatchGetItem</code> calls, the nature of partial failures, and the
+engineering strategies required to manage throttled requests.</p>
+<h3 id="partial-batch-failures-and-unprocessed-items">Partial Batch
+Failures and Unprocessed Items</h3>
+<p>DynamoDB batch operations are not atomic transactions. When you send
+a <code>BatchWriteItem</code> or <code>BatchGetItem</code> request,
+DynamoDB processes each individual put, delete, or get action
+independently.</p>
+<p>If the table's provisioned read capacity units (RCUs) or write
+capacity units (WCUs) are fully consumed mid-batch, DynamoDB processes
+what it can and returns an HTTP 200 OK status. Inside the response
+object, it populates:</p>
+<ul>
+<li><strong><code>UnprocessedItems</code></strong> for
+<code>BatchWriteItem</code> calls, containing the specific put or delete
+requests that were throttled.</li>
+<li><strong><code>UnprocessedKeys</code></strong> for
+<code>BatchGetItem</code> calls, containing the primary keys that could
+not be read due to capacity constraints.</li>
+</ul>
+<p>If the table is so severely throttled that none of the items in the
+batch can be processed, DynamoDB returns a <code>400 Bad Request</code>
+error with a <code>ProvisionedThroughputExceededException</code>.</p>
+<h3 id="automatic-sdk-retries-vs-application-logic">Automatic SDK
+Retries vs. Application Logic</h3>
+<p>Most AWS SDKs implement default retry behavior with exponential
+backoff for low-level throttled requests. However, SDK behavior varies
+when handling partial batch responses:</p>
+<ul>
+<li><strong>Automatic Retries:</strong> If the entire call fails with a
+<code>ProvisionedThroughputExceededException</code>, the SDK
+automatically retries the operation based on its configured retry
+policy.</li>
+<li><strong>Manual Retries Required:</strong> If DynamoDB returns an
+HTTP 200 with an <code>UnprocessedItems</code> or
+<code>UnprocessedKeys</code> payload, the SDK does not automatically
+re-submit those unprocessed items in a new request. The calling
+application must inspect the response, extract the remaining items, and
+retry them explicitly.</li>
+</ul>
+<p>Failing to programmatically inspect and retry unprocessed items will
+result in silent data loss for writes or missing datasets for reads.</p>
+<h3 id="systemic-impacts-of-exceeding-throughput">Systemic Impacts of
+Exceeding Throughput</h3>
+<p>Reaching provisioned limits causes downstream operational
+impacts:</p>
+<ul>
+<li><strong>Increased Latency:</strong> Implementing retry loops with
+exponential backoff and jitter introduces delays, increasing the
+end-to-end latency of the batch job.</li>
+<li><strong>Hot Partition Throttling:</strong> Even if total provisioned
+throughput across the entire table is high, individual partitions are
+capped at 1,000 WCUs and 3,000 RCUs. If a batch concentrates requests on
+a single partition key, that specific partition will throttle the
+operation while global capacity appears underutilized.</li>
+<li><strong>Thread and Connection Exhaustion:</strong> Long-running
+retry loops can tie up application threads and database connection
+pools, potentially propagating backpressure to upstream services.</li>
+</ul>
+<h3 id="best-practices-for-handling-batch-limits">Best Practices for
+Handling Batch Limits</h3>
+<p>To prevent and manage throughput exhaustion during batch
+workflows:</p>
+<ol type="1">
+<li><strong>Implement Exponential Backoff with Jitter:</strong> When
+reprocessing <code>UnprocessedItems</code>, pause execution using a
+progressively longer randomized backoff interval to avoid overwhelming
+the table immediately after a capacity spike.</li>
+<li><strong>Enable DynamoDB Auto Scaling:</strong> If using Provisioned
+Mode, configure Auto Scaling to automatically raise capacity limits when
+sustained utilization crosses target thresholds.</li>
+<li><strong>Evaluate On-Demand Capacity Mode:</strong> For workloads
+with unpredictable, high-volume traffic bursts, On-Demand mode
+dynamically accommodates traffic without manual provisioning.</li>
+<li><strong>Distribute Partition Keys Uniformly:</strong> Ensure batch
+items do not target the same partition key repeatedly, which helps
+distribute the load across multiple internal partitions.</li>
+<li><strong>Regulate Ingestion with a Message Queue:</strong> Place an
+Amazon SQS queue in front of batch write processes to buffer incoming
+data and rate-limit workers to match the table's provisioned
+limits.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-batch-operations-over-throughput-limits';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

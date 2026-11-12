@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB String Set Updates: Removing Elements - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB processes element removals from a String Set (SS) attribute using atomic update expressions, allowing specific items to be subtracted without rewriting the entire set. By leveraging the DELETE action within an UpdateItem request, DynamoDB">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-string-set-updates-removing-elements">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB String Set Updates: Removing Elements - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-string-set-updates-removing-elements" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB processes element removals from a String Set (SS) attribute using atomic update expressions, allowing specific items to be subtracted without rewriting the entire set. By leveraging the DELETE action within an UpdateItem request, DynamoDB" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-string-set-updates-removing-elements">DynamoDB String
+Set Updates: Removing Elements</h1>
+<p>Amazon DynamoDB processes element removals from a String Set
+(<code>SS</code>) attribute using atomic update expressions, allowing
+specific items to be subtracted without rewriting the entire set. By
+leveraging the <code>DELETE</code> action within an
+<code>UpdateItem</code> request, DynamoDB identifies and deletes the
+targeted strings in place, ensures idempotency, and automatically
+manages the lifecycle of the attribute if all elements are
+eliminated.</p>
+<h3 id="the-delete-update-action">The <code>DELETE</code> Update
+Action</h3>
+<p>To remove elements from a String Set, you use the <code>DELETE</code>
+action in an <code>UpdateExpression</code>. Although the
+<code>REMOVE</code> action is typically used to delete an entire
+attribute from an item, the <code>DELETE</code> action is specifically
+designed for set data types (<code>SS</code>, <code>NS</code>,
+<code>BS</code>).</p>
+<p>When processing this request, DynamoDB requires:</p>
+<ul>
+<li>An <code>UpdateExpression</code> specifying
+<code>DELETE &lt;attribute_name&gt; &lt;value_set&gt;</code></li>
+<li>An <code>ExpressionAttributeValues</code> map defining the elements
+to remove as a String Set (<code>SS</code>)</li>
+</ul>
+<p>For example, to remove <code>"apple"</code> and <code>"banana"</code>
+from an existing set named <code>FruitList</code>, the update expression
+is defined as <code>DELETE FruitList :elementsToRemove</code>, where
+<code>:elementsToRemove</code> maps to
+<code>{"SS": ["apple", "banana"]}</code>.</p>
+<h3 id="matching-and-idempotency">Matching and Idempotency</h3>
+<p>During execution, DynamoDB matches the elements provided in the
+request against the existing members of the set:</p>
+<ul>
+<li><strong>Existing Elements:</strong> Any specified string that exists
+in the current set is removed.</li>
+<li><strong>Non-Existing Elements:</strong> Any specified string that
+does not exist in the set is simply ignored.</li>
+</ul>
+<p>This behavior makes the operation fully idempotent. The update will
+succeed even if some or all of the elements to be removed are already
+absent from the set, without throwing a validation or client error.</p>
+<h3 id="server-side-atomicity">Server-Side Atomicity</h3>
+<p>DynamoDB processes set modifications natively on the server. Unlike a
+read-modify-write pattern—where a client application must fetch the
+current list, filter out elements locally, and write back the entire
+updated list—the <code>DELETE</code> action sends only the elements to
+be purged over the network. This eliminates race conditions between
+concurrent requests and saves both network bandwidth and read/write
+capacity units.</p>
+<h3 id="empty-set-handling">Empty Set Handling</h3>
+<p>DynamoDB does not allow empty sets. When a String Set update removes
+all remaining elements from a set, DynamoDB automatically deletes the
+entire attribute from the item. If subsequent reads query that item, the
+attribute will no longer exist rather than returning an empty set
+(<code>[]</code>).</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-string-set-updates-removing-elements';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

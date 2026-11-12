@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Sparse Index Design for Storage Optimization - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB leverages sparse indexes to dramatically reduce secondary index storage costs and optimize read/write performance. In DynamoDB, any Global Secondary Index (GSI) or Local Secondary Index (LSI) is inherently sparse because DynamoDB only writ">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-sparse-index-design-for-storage-optimization">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Sparse Index Design for Storage Optimization - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-sparse-index-design-for-storage-optimization" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB leverages sparse indexes to dramatically reduce secondary index storage costs and optimize read/write performance. In DynamoDB, any Global Secondary Index (GSI) or Local Secondary Index (LSI) is inherently sparse because DynamoDB only writ" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-sparse-index-design-for-storage-optimization">DynamoDB
+Sparse Index Design for Storage Optimization</h1>
+<p>Amazon DynamoDB leverages sparse indexes to dramatically reduce
+secondary index storage costs and optimize read/write performance. In
+DynamoDB, any Global Secondary Index (GSI) or Local Secondary Index
+(LSI) is inherently sparse because DynamoDB only writes an item to an
+index if the item contains the exact attributes defined as the index’s
+partition key and sort key. This article examines the internal mechanics
+of DynamoDB sparse indexes, how they optimize storage consumption, and
+how to implement them to lower operational costs.</p>
+<h3 id="the-mechanism-of-sparse-indexes-in-dynamodb">The Mechanism of
+Sparse Indexes in DynamoDB</h3>
+<p>Unlike traditional relational database management systems (RDBMS)
+that typically index every row and store <code>NULL</code> markers for
+missing values, DynamoDB operates on a schemaless model. When an item is
+created or updated in a base table, DynamoDB evaluates whether the item
+possesses the attribute designated as the partition key of a secondary
+index (and the sort key, if defined).</p>
+<p>If the item lacks either of these key attributes, DynamoDB ignores
+the item entirely for that specific index. As a result, the secondary
+index only contains a subset of items from the base table.</p>
+<h3 id="how-sparse-indexes-optimize-storage">How Sparse Indexes Optimize
+Storage</h3>
+<p>Storage optimization through sparse indexes occurs at the data
+allocation level:</p>
+<ol type="1">
+<li><strong>Physical Footprint Reduction:</strong> DynamoDB charges for
+secondary storage based on the total size of the items projected into
+the index plus an administrative overhead of 100 bytes per item. By
+designing an index where only a small percentage of base items qualify
+(for example, 2% of items flagged for manual review), the storage
+footprint of the GSI is reduced by 98% compared to the base table.</li>
+<li><strong>Selective Attribute Projection:</strong> When pairing sparse
+indexes with minimal attribute projection (<code>KEYS_ONLY</code> or
+<code>INCLUDE</code>), storage is further optimized. Only the required
+partition key, sort key, base table primary key, and explicitly
+specified attributes are replicated to the index.</li>
+<li><strong>Automatic Entry Removal:</strong> When an indexed attribute
+is deleted from an item in the base table, DynamoDB automatically
+deletes the corresponding record from the secondary index, instantly
+reclaiming index storage without requiring manual partition
+management.</li>
+</ol>
+<h3 id="throughput-and-performance-advantages">Throughput and
+Performance Advantages</h3>
+<p>Beyond physical disk savings, sparse indexes directly optimize
+provisioned and on-demand throughput:</p>
+<ul>
+<li><strong>Elimination of Unnecessary Writes:</strong> If a base table
+write does not add or alter an attribute that is part of a secondary
+index, no Write Capacity Units (WCUs) are consumed on that index. In
+high-volume workloads, keeping an index sparse avoids replicating
+millions of write operations.</li>
+<li><strong>Focused Queries:</strong> Querying a sparse index returns
+only relevant records, eliminating the need for expensive filter
+expressions across millions of irrelevant items. This minimizes Read
+Capacity Unit (RCU) consumption and accelerates response times.</li>
+</ul>
+<h3 id="practical-implementation-rules">Practical Implementation
+Rules</h3>
+<p>To successfully implement a sparse index for storage
+optimization:</p>
+<ul>
+<li><strong>Omit Instead of Nullify:</strong> Ensure application logic
+deletes or omits the attribute rather than setting it to
+<code>false</code>, an empty string, or a null type. In DynamoDB,
+attributes with values like <code>false</code> or <code>null</code> are
+still considered present and will be indexed, negating the storage
+benefits.</li>
+<li><strong>State-Driven Indexing:</strong> Use attributes that
+represent transient states, such as <code>PendingApproval</code> or
+<code>FailedPayment</code>. When the item transitions to a terminal
+state (such as <code>Approved</code> or <code>Paid</code>), remove the
+attribute from the item to automatically prune it from the secondary
+index.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-sparse-index-design-for-storage-optimization';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

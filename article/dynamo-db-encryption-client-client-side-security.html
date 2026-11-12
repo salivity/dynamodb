@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Encryption Client: Client-Side Security - dynamodb</title>
+    <meta name="description" content="The Amazon DynamoDB Encryption Client is a software library designed to provide end-to-end data protection by encrypting and signing database items directly within the application environment before they are transmitted to DynamoDB. This article explores">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-encryption-client-client-side-security">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Encryption Client: Client-Side Security - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-encryption-client-client-side-security" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="The Amazon DynamoDB Encryption Client is a software library designed to provide end-to-end data protection by encrypting and signing database items directly within the application environment before they are transmitted to DynamoDB. This article explores" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-encryption-client-client-side-security">DynamoDB
+Encryption Client: Client-Side Security</h1>
+<p>The Amazon DynamoDB Encryption Client is a software library designed
+to provide end-to-end data protection by encrypting and signing database
+items directly within the application environment before they are
+transmitted to DynamoDB. This article explores the specific
+responsibilities of the DynamoDB Encryption Client in client-side
+encryption workflows, including how it enforces attribute-level
+security, guarantees data authenticity through digital signatures,
+integrates with key management systems, and meets strict zero-trust and
+compliance mandates.</p>
+<h3 id="end-to-end-encryption-before-transmission">End-to-End Encryption
+Before Transmission</h3>
+<p>In standard server-side encryption (such as DynamoDB's default AWS
+KMS integration), data is encrypted only after it reaches the AWS
+storage infrastructure. The DynamoDB Encryption Client shifts this
+process to the client application. By encrypting data locally on the
+host machine before it ever leaves application memory, the client
+ensures that sensitive data is fully protected both in transit across
+the network and at rest within the database. Even intermediate network
+layers, AWS administrators, and database monitoring tools cannot inspect
+or access the plaintext.</p>
+<h3 id="granular-attribute-level-control">Granular, Attribute-Level
+Control</h3>
+<p>DynamoDB requires primary keys (partition keys and sort keys) to be
+visible to index, route, and query items efficiently. The DynamoDB
+Encryption Client provides granular control over individual attributes
+within an item, allowing developers to define custom encryption
+actions:</p>
+<ul>
+<li><strong>Encrypt and Sign:</strong> Highly sensitive attributes, such
+as personally identifiable information (PII) or financial records, are
+both encrypted and digitally signed.</li>
+<li><strong>Sign Only:</strong> Attributes required for queries and
+indexing (such as primary keys, timestamps, or status flags) remain in
+plaintext so DynamoDB can operate on them, but they are included in the
+cryptographic signature to prevent tampering.</li>
+<li><strong>Do Nothing:</strong> Non-sensitive operational metadata can
+be excluded entirely from cryptographic processing.</li>
+</ul>
+<h3 id="cryptographic-signatures-and-tamper-resistance">Cryptographic
+Signatures and Tamper Resistance</h3>
+<p>A critical vulnerability in distributed databases is the potential
+for unauthorized data tampering, attribute injection, or attribute
+swapping. The DynamoDB Encryption Client mitigates this by generating a
+digital signature over the entire item, including both encrypted and
+plaintext attributes. When reading an item, the client validates this
+signature before decrypting the payload. If any signed attribute—such as
+a primary key or an encrypted value—has been altered, deleted, or
+swapped with another record, the signature verification fails
+immediately, and the application rejects the corrupted item.</p>
+<h3 id="orchestration-of-envelope-encryption">Orchestration of Envelope
+Encryption</h3>
+<p>The client manages the complexities of envelope encryption, a
+standard cryptographic pattern that uses multiple layers of keys:</p>
+<ol type="1">
+<li><strong>Data Keys:</strong> The client generates a unique data
+encryption key for every individual database item or batch to encrypt
+the target attributes.</li>
+<li><strong>Master Keys:</strong> The data key itself is encrypted using
+a root key managed by a Cryptographic Materials Provider (CMP). This can
+be AWS Key Management Service (AWS KMS), a custom Hardware Security
+Module (HSM), or local key rings.</li>
+<li><strong>Decryption Workflows:</strong> Upon retrieval, the client
+extracts the encrypted data key, requests the CMP to decrypt it, and
+uses the resulting plaintext data key to decrypt the item's sensitive
+attributes locally.</li>
+</ol>
+<h3 id="achieving-zero-trust-architecture-and-compliance">Achieving
+Zero-Trust Architecture and Compliance</h3>
+<p>By restricting the decryption keys strictly to authorized application
+tiers, the DynamoDB Encryption Client enforces a strict separation of
+duties. Database administrators and infrastructure operators manage the
+database without gaining access to the plaintext content stored within
+it. This architecture satisfies rigorous compliance frameworks—including
+HIPAA, PCI DSS, and GDPR—which often mandate that sensitive customer
+data must remain completely inaccessible to cloud service providers and
+hosting environments.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-encryption-client-client-side-security';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

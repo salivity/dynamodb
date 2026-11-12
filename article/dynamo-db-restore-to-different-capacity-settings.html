@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Restore to Different Capacity Settings - dynamodb</title>
+    <meta name="description" content="Restoring an Amazon DynamoDB backup allows you to customize the new table’s configuration, including its billing mode and provisioned read and write capacity units. When you restore a backup with different capacity settings, DynamoDB creates an entirely n">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-restore-to-different-capacity-settings">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Restore to Different Capacity Settings - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-restore-to-different-capacity-settings" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Restoring an Amazon DynamoDB backup allows you to customize the new table’s configuration, including its billing mode and provisioned read and write capacity units. When you restore a backup with different capacity settings, DynamoDB creates an entirely n" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-restore-to-different-capacity-settings">DynamoDB
+Restore to Different Capacity Settings</h1>
+<p>Restoring an Amazon DynamoDB backup allows you to customize the new
+table’s configuration, including its billing mode and provisioned read
+and write capacity units. When you restore a backup with different
+capacity settings, DynamoDB creates an entirely new table that
+immediately adopts the newly specified capacity configurations without
+affecting the integrity or speed of the restored data. This article
+explains how DynamoDB handles the restore process, the impact on
+performance and costs, and critical post-restore considerations.</p>
+<h3 id="how-capacity-configuration-works-during-restore">How Capacity
+Configuration Works During Restore</h3>
+<p>DynamoDB backups—whether created via on-demand backups or
+Point-in-Time Recovery (PITR)—always restore to a new table. During this
+process, you are not forced to maintain the original table's settings.
+You can switch the billing mode between Provisioned and On-Demand, or
+you can adjust the specific Read Capacity Units (RCUs) and Write
+Capacity Units (WCUs).</p>
+<h3 id="impact-on-the-restore-process">Impact on the Restore
+Process</h3>
+<p>The capacity settings assigned to the target table do not affect the
+duration of the restore itself. DynamoDB manages the data restoration
+process internally using dedicated system resources.</p>
+<ul>
+<li><strong>No Throttling During Restore:</strong> If you restore to a
+provisioned table with very low capacity (such as 1 RCU and 1 WCU), the
+restore will not throttle or slow down.</li>
+<li><strong>Internal Throughput:</strong> DynamoDB allocates the
+necessary throughput behind the scenes to write the backed-up data into
+the new partitions as quickly as possible.</li>
+</ul>
+<h3 id="switching-between-billing-modes">Switching Between Billing
+Modes</h3>
+<p>You can adjust the table's billing mode depending on your intended
+workload for the new table:</p>
+<ul>
+<li><strong>Provisioned to On-Demand:</strong> If the source table used
+provisioned capacity, you can restore it as an On-Demand table. The
+restored table will instantly handle unpredictable workloads without
+requiring capacity planning, charging purely on a per-request
+basis.</li>
+<li><strong>On-Demand to Provisioned:</strong> If the source table was
+On-Demand, you can restore it with provisioned RCUs and WCUs. This is
+common when restoring production data into a testing or staging
+environment where strict cost caps are required.</li>
+</ul>
+<h3 id="global-secondary-index-gsi-behavior">Global Secondary Index
+(GSI) Behavior</h3>
+<p>If the backup contains Global Secondary Indexes (GSIs), the capacity
+rules apply to them as well:</p>
+<ul>
+<li>When restoring to an <strong>On-Demand</strong> table, all restored
+GSIs automatically switch to On-Demand mode.</li>
+<li>When restoring to a <strong>Provisioned</strong> table, you must
+define the RCU and WCU allocations for each restored GSI. If you
+under-provision a GSI, post-restore write operations to the base table
+could experience throttling if index updates exceed the GSI's
+provisioned write limits.</li>
+</ul>
+<h3 id="post-restore-operational-impact">Post-Restore Operational
+Impact</h3>
+<p>Once the restore process completes and the table status changes to
+<code>ACTIVE</code>, the new capacity settings take effect
+immediately:</p>
+<ul>
+<li><strong>Application Throttling:</strong> If you restored with lower
+provisioned capacity than the original table, any application traffic
+directed to the new table must adhere to these lower limits. Exceeding
+them will result in <code>ProvisionedThroughputExceededException</code>
+errors.</li>
+<li><strong>Auto Scaling Configuration:</strong> AWS Application Auto
+Scaling settings are not copied from the backup. If the original table
+relied on auto-scaling to adjust provisioned capacity dynamically, you
+must manually re-create the scaling policies on the newly restored
+table.</li>
+<li><strong>Cost Changes:</strong> Billing for the restored table
+immediately reflects the new settings. Provisioned tables begin
+incurring hourly charges based on the configured RCUs/WCUs, while
+On-Demand tables incur charges based on incoming read/write request
+volumes.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-restore-to-different-capacity-settings';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

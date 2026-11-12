@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Optimistic Locking to Prevent Overwrites - dynamodb</title>
+    <meta name="description" content="Optimistic locking in Amazon DynamoDB prevents overwrite race conditions by ensuring that a write operation only succeeds if the underlying item has not been modified since it was last read. Instead of locking the database record during a read-modify-writ">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-optimistic-locking-to-prevent-overwrites">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Optimistic Locking to Prevent Overwrites - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-optimistic-locking-to-prevent-overwrites" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Optimistic locking in Amazon DynamoDB prevents overwrite race conditions by ensuring that a write operation only succeeds if the underlying item has not been modified since it was last read. Instead of locking the database record during a read-modify-writ" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-optimistic-locking-to-prevent-overwrites">DynamoDB
+Optimistic Locking to Prevent Overwrites</h1>
+<p>Optimistic locking in Amazon DynamoDB prevents overwrite race
+conditions by ensuring that a write operation only succeeds if the
+underlying item has not been modified since it was last read. Instead of
+locking the database record during a read-modify-write cycle, DynamoDB
+uses a version attribute combined with conditional writes. If two
+processes attempt to update the same record simultaneously, the first
+write updates the version number and succeeds, while the second write
+fails because its expected version number no longer matches, thereby
+protecting against data loss from concurrent updates.</p>
+<h3 id="the-race-condition-problem">The Race Condition Problem</h3>
+<p>In distributed applications, race conditions commonly occur during
+read-modify-write workflows. For example, two independent clients might
+read an account balance of $100 at the exact same moment. Client A
+subtracts $20, preparing to write back $80. Client B adds $50, preparing
+to write back $150. If Client B writes its update immediately after
+Client A, Client A's transaction is completely overwritten and lost—a
+scenario known as the "last-write-wins" race condition.</p>
+<h3 id="how-optimistic-locking-works-in-dynamodb">How Optimistic Locking
+Works in DynamoDB</h3>
+<p>Optimistic locking assumes that multiple transactions can frequently
+complete without interfering with each other. Rather than placing a
+pessimistic lock on the record—which would block other readers and
+writers and degrade DynamoDB's distributed throughput—DynamoDB
+implements optimistic concurrency control through client-managed
+versioning and conditional expressions.</p>
+<p>The strategy relies on three main components:</p>
+<ol type="1">
+<li><strong>A Version Attribute:</strong> Each item in the table
+includes a specific attribute used to track state changes, commonly
+named <code>version</code>, <code>versionNumber</code>, or a
+timestamp.</li>
+<li><strong>Conditional Writes
+(<code>ConditionExpression</code>):</strong> When writing an update back
+to DynamoDB, the client specifies a condition requiring the item’s
+current version to match the version read at the start of the
+transaction.</li>
+<li><strong>Version Increment:</strong> In the same update expression,
+the version number is incremented by one.</li>
+</ol>
+<h3 id="the-execution-lifecycle">The Execution Lifecycle</h3>
+<ol type="1">
+<li><strong>Read Item:</strong> A client issues a <code>GetItem</code>
+request to retrieve the target item and notes its current version (for
+example, <code>version = 1</code>).</li>
+<li><strong>Modify Item:</strong> The client performs its business logic
+locally without holding any lock in the database.</li>
+<li><strong>Conditional Update:</strong> The client issues an
+<code>UpdateItem</code> or <code>PutItem</code> operation with a
+<code>ConditionExpression</code> stating
+<code>version = :current_version</code>. In the
+<code>UpdateExpression</code>, the client sets
+<code>version = version + 1</code>.</li>
+<li><strong>Validation:</strong>
+<ul>
+<li><strong>Success:</strong> If no other process altered the item,
+DynamoDB writes the changes, increments the version to <code>2</code>,
+and returns a success response.</li>
+<li><strong>Failure:</strong> If another process modified the item in
+the interim, the version in DynamoDB will already be <code>2</code>.
+DynamoDB rejects the update atomically and returns a
+<code>ConditionalCheckFailedException</code>.</li>
+</ul></li>
+</ol>
+<h3 id="handling-concurrency-collisions">Handling Concurrency
+Collisions</h3>
+<p>When a <code>ConditionalCheckFailedException</code> is raised, the
+failed client must not simply force the write. Instead, the application
+layer typically catches the exception and initiates a retry loop using
+an exponential backoff with jitter strategy.</p>
+<p>During the retry, the client re-reads the updated state (now
+containing the newest version and the previous writer's data),
+re-evaluates the business logic against the fresh data, and attempts the
+conditional write again with the new version number. This ensures all
+state transitions remain atomic, consistent, and safe from overwrite
+corruption without introducing database deadlocks.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-optimistic-locking-to-prevent-overwrites';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

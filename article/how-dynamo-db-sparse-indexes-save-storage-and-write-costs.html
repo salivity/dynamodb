@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Sparse Indexes Save Storage and Write Costs - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB sparse indexes provide a highly efficient mechanism for querying subsets of data without incurring the overhead of indexing an entire table. By design, secondary indexes in DynamoDB only populate items that contain the specific partition k">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-sparse-indexes-save-storage-and-write-costs">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Sparse Indexes Save Storage and Write Costs - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-sparse-indexes-save-storage-and-write-costs" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB sparse indexes provide a highly efficient mechanism for querying subsets of data without incurring the overhead of indexing an entire table. By design, secondary indexes in DynamoDB only populate items that contain the specific partition k" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-sparse-indexes-save-storage-and-write-costs">How
+DynamoDB Sparse Indexes Save Storage and Write Costs</h1>
+<p>Amazon DynamoDB sparse indexes provide a highly efficient mechanism
+for querying subsets of data without incurring the overhead of indexing
+an entire table. By design, secondary indexes in DynamoDB only populate
+items that contain the specific partition key (and optional sort key)
+defined in the index schema. Understanding how this selective population
+works allows developers and architects to drastically minimize both
+provisioned or on-demand write capacity consumption and overall storage
+expenditures.</p>
+<h3 id="the-mechanics-of-a-sparse-index">The Mechanics of a Sparse
+Index</h3>
+<p>In DynamoDB, any Global Secondary Index (GSI) or Local Secondary
+Index (LSI) is inherently sparse. When you create an index, DynamoDB
+automatically omits any item from the base table that lacks the
+attribute designated as the index's partition key.</p>
+<p>For instance, if a base table contains 10 million user records, but
+only 50,000 users have an attribute named
+<code>pending_verification</code>, creating a GSI with
+<code>pending_verification</code> as the partition key results in an
+index containing only those 50,000 items. The remaining 9,950,000 items
+are ignored entirely by the index.</p>
+<h3 id="how-sparse-indexes-reduce-write-capacity-costs">How Sparse
+Indexes Reduce Write Capacity Costs</h3>
+<p>DynamoDB consumes Write Capacity Units (WCUs) on both the base table
+and any affected secondary indexes whenever data is inserted, updated,
+or deleted. A sparse index optimizes write capacity through the
+following mechanisms:</p>
+<ol type="1">
+<li><strong>Elimination of Secondary Index Writes:</strong> When an item
+is written or updated in the base table without the index key
+attributes, DynamoDB does not write to the GSI. Consequently, zero WCUs
+are consumed on that index for the operation.</li>
+<li><strong>Reduced Provisioning Requirements:</strong> Because writes
+to the secondary index occur only for the small percentage of items
+carrying the indexed attribute, you can provision substantially fewer
+WCUs on the GSI compared to the base table.</li>
+<li><strong>Optimized Attribute Deletion:</strong> When a workflow
+completes (e.g., an order moves from "pending" to "completed"), simply
+removing the indexed attribute from the item deletes it from the GSI,
+consuming a minimal write operation and ensuring subsequent updates to
+the completed item never incur index write costs again.</li>
+</ol>
+<p>In high-throughput systems where write volume is heavy, avoiding GSI
+updates for the vast majority of transactions delivers substantial cost
+reductions.</p>
+<h3 id="how-sparse-indexes-reduce-storage-costs">How Sparse Indexes
+Reduce Storage Costs</h3>
+<p>DynamoDB charges a monthly fee per gigabyte of data stored across
+both base tables and secondary indexes. The storage footprint of a GSI
+includes:</p>
+<ul>
+<li>The size of the index partition key and sort key.</li>
+<li>The size of the base table primary key.</li>
+<li>The size of any projected attributes.</li>
+<li>A 100-byte per-item storage overhead.</li>
+</ul>
+<p>Because an index mirrors data from the main table, a standard (dense)
+GSI containing all 10 million items can easily double your overall
+storage costs. A sparse index only stores data for qualifying records.
+In the earlier scenario with 50,000 pending verifications out of 10
+million users, the sparse GSI consumes storage for just 0.5% of the
+total dataset. This prevents paying for redundant storage of
+non-essential records and significantly reduces the 100-byte indexing
+overhead across the database footprint.</p>
+<h3 id="optimal-use-cases">Optimal Use Cases</h3>
+<p>Sparse indexes are most effective for tracking transient states, rare
+conditions, or filtered subsets, such as:</p>
+<ul>
+<li><strong>Job Queues:</strong> Indexing only tasks with a
+<code>status = 'QUEUED'</code> attribute, ignoring completed jobs.</li>
+<li><strong>Flagged Entities:</strong> Tracking accounts that require
+moderation or fraud review.</li>
+<li><strong>Tiered Accounts:</strong> Indexing only premium or VIP
+customers within a general user directory.</li>
+</ul>
+<p>By isolating these low-cardinality subsets into sparse indexes,
+DynamoDB tables retain peak read performance for targeted queries while
+keeping write overhead and storage bills to a minimum.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-sparse-indexes-save-storage-and-write-costs';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

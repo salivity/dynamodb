@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Conditional Check Failed CloudWatch Metric - dynamodb</title>
+    <meta name="description" content="This article details the specific Amazon CloudWatch metric responsible for tracking DynamoDB conditional write failures, explains the root causes of these errors, and covers how to monitor them effectively. By understanding this metric, developers can ide">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-conditional-check-failed-cloud-watch-metric">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Conditional Check Failed CloudWatch Metric - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-conditional-check-failed-cloud-watch-metric" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article details the specific Amazon CloudWatch metric responsible for tracking DynamoDB conditional write failures, explains the root causes of these errors, and covers how to monitor them effectively. By understanding this metric, developers can ide" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-conditional-check-failed-cloudwatch-metric">DynamoDB
+Conditional Check Failed CloudWatch Metric</h1>
+<p>This article details the specific Amazon CloudWatch metric
+responsible for tracking DynamoDB conditional write failures, explains
+the root causes of these errors, and covers how to monitor them
+effectively. By understanding this metric, developers can identify
+unexpected concurrency conflicts, debug application logic, and set up
+automated CloudWatch alarms to ensure robust database operations.</p>
+<h2 id="the-metric-conditionalcheckfailedrequests">The Metric:
+ConditionalCheckFailedRequests</h2>
+<p>The CloudWatch metric that alerts developers to DynamoDB conditional
+check failures is
+<strong><code>ConditionalCheckFailedRequests</code></strong>.</p>
+<p>DynamoDB emits this metric to the <code>AWS/DynamoDB</code> namespace
+whenever a write transaction—such as <code>PutItem</code>,
+<code>UpdateItem</code>, or <code>DeleteItem</code>—is rejected because
+a condition specified in the request evaluates to false.</p>
+<h3 id="why-conditional-checks-fail">Why Conditional Checks Fail</h3>
+<p>Conditional writes in DynamoDB rely on the
+<code>ConditionExpression</code> parameter to ensure operations only
+succeed if target attributes meet designated criteria. Common use cases
+include:</p>
+<ul>
+<li><strong>Idempotency and preventing duplicates:</strong> Ensuring an
+item does not already exist
+(<code>attribute_not_exists(id)</code>).</li>
+<li><strong>Optimistic locking:</strong> Checking a version number
+before applying updates to ensure data has not been modified
+concurrently.</li>
+<li><strong>Business logic validation:</strong> Modifying a balance or
+status only if current fields satisfy predefined rules (for example,
+<code>balance &gt;= :deduction</code>).</li>
+</ul>
+<p>When the item in the database fails to meet the criteria in the
+<code>ConditionExpression</code>, DynamoDB aborts the write and returns
+a <code>ConditionalCheckFailedException</code> (HTTP status code 400).
+Each rejected attempt increments the
+<code>ConditionalCheckFailedRequests</code> metric.</p>
+<h3 id="metric-details-and-dimensions">Metric Details and
+Dimensions</h3>
+<ul>
+<li><strong>Metric Name:</strong>
+<code>ConditionalCheckFailedRequests</code></li>
+<li><strong>Namespace:</strong> <code>AWS/DynamoDB</code></li>
+<li><strong>Unit:</strong> Count</li>
+<li><strong>Statistics:</strong> <code>Sum</code>,
+<code>SampleCount</code></li>
+<li><strong>Primary Dimension:</strong> <code>TableName</code></li>
+</ul>
+<p>Because this metric is emitted on a per-table basis, it isolates
+which specific resource is experiencing conflicts.</p>
+<h3
+id="configuring-cloudwatch-alarms-for-conditional-checks">Configuring
+CloudWatch Alarms for Conditional Checks</h3>
+<p>While occasional conditional check failures are standard in
+optimistic locking patterns, a sudden spike usually points to race
+conditions, application bugs, or rogue client behavior.</p>
+<p>To configure an alert:</p>
+<ol type="1">
+<li>Open the <strong>CloudWatch Console</strong> and navigate to
+<strong>Alarms</strong> &gt; <strong>Create alarm</strong>.</li>
+<li>Select the <code>AWS/DynamoDB</code> namespace and search for the
+<code>ConditionalCheckFailedRequests</code> metric filtered by your
+specific <code>TableName</code>.</li>
+<li>Set the statistic to <strong>Sum</strong> and configure the
+evaluation period (e.g., 1 or 5 minutes).</li>
+<li>Define a threshold based on your application's baseline. For strict
+environments where failures should never occur, set the condition to
+<code>Greater than 0</code>. For optimistic concurrency workflows, use
+anomaly detection or a static upper threshold.</li>
+<li>Attach an <strong>Amazon SNS topic</strong> to notify developers or
+trigger automated remediation workflows (like AWS Lambda) when the
+threshold is breached.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-conditional-check-failed-cloud-watch-metric';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

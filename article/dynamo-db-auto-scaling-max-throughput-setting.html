@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Auto Scaling Max Throughput Setting - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB auto scaling automatically adjusts provisioned throughput capacity on your behalf in response to actual traffic patterns. The specific configuration parameter that controls the upper threshold of this throughput is MaxCapacity (labeled in">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-auto-scaling-max-throughput-setting">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Auto Scaling Max Throughput Setting - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-auto-scaling-max-throughput-setting" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB auto scaling automatically adjusts provisioned throughput capacity on your behalf in response to actual traffic patterns. The specific configuration parameter that controls the upper threshold of this throughput is MaxCapacity (labeled in" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-auto-scaling-max-throughput-setting">DynamoDB Auto
+Scaling Max Throughput Setting</h1>
+<p>Amazon DynamoDB auto scaling automatically adjusts provisioned
+throughput capacity on your behalf in response to actual traffic
+patterns. The specific configuration parameter that controls the upper
+threshold of this throughput is
+<strong><code>MaxCapacity</code></strong> (labeled in the AWS Management
+Console as <strong>Maximum provisioned capacity units</strong>). This
+article breaks down how this parameter works, where it is configured,
+and how to apply it effectively to manage performance and prevent
+unexpected billing surges.</p>
+<h3 id="the-key-parameter-maxcapacity">The Key Parameter:
+MaxCapacity</h3>
+<p>In AWS Application Auto Scaling—the underlying service that powers
+DynamoDB auto scaling—the maximum throughput allowed for a table or
+global secondary index (GSI) is determined by the
+<strong><code>MaxCapacity</code></strong> parameter.</p>
+<p>This parameter defines the absolute highest number of capacity units
+that auto scaling can allocate, regardless of how high traffic spikes.
+It is configured independently for reads and writes across two scalable
+dimensions:</p>
+<ul>
+<li><strong>Read Capacity Units (RCUs):</strong>
+<code>dynamodb:table:ReadCapacityUnits</code> (or
+<code>dynamodb:index:ReadCapacityUnits</code> for GSIs)</li>
+<li><strong>Write Capacity Units (WCUs):</strong>
+<code>dynamodb:table:WriteCapacityUnits</code> (or
+<code>dynamodb:index:WriteCapacityUnits</code> for GSIs)</li>
+</ul>
+<p>When target tracking policies detect that consumption exceeds the
+target utilization rate (such as 70%), the system increases capacity in
+increments up to, but never exceeding, the value set in
+<code>MaxCapacity</code>.</p>
+<h3 id="how-to-configure-maxcapacity">How to Configure MaxCapacity</h3>
+<p>The parameter can be defined across different deployment
+interfaces:</p>
+<h4 id="1-aws-management-console">1. AWS Management Console</h4>
+<p>Under the <strong>Capacity</strong> settings of a DynamoDB table or
+secondary index:</p>
+<ul>
+<li>Set the capacity mode to <strong>Provisioned</strong>.</li>
+<li>Enable <strong>Auto scaling</strong> for read or write
+capacity.</li>
+<li>Define the <strong>Maximum provisioned capacity units</strong>
+field.</li>
+</ul>
+<h4 id="2-aws-cli">2. AWS CLI</h4>
+<p>When registering a scalable target via the Application Auto Scaling
+CLI, use the <code>--max-capacity</code> flag:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> application-autoscaling register-scalable-target <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">--service-namespace</span> dynamodb <span class="dt">\</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">--resource-id</span> table/MyTable <span class="dt">\</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">--scalable-dimension</span> dynamodb:table:ReadCapacityUnits <span class="dt">\</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">--min-capacity</span> 5 <span class="dt">\</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">--max-capacity</span> 100</span></code></pre></div>
+<h4 id="3-aws-cloudformation">3. AWS CloudFormation</h4>
+<p>In CloudFormation, define the property within an
+<code>AWS::ApplicationAutoScaling::ScalableTarget</code> resource:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ScalableReadTarget</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">Type</span><span class="kw">:</span><span class="at"> AWS::ApplicationAutoScaling::ScalableTarget</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">Properties</span><span class="kw">:</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">MaxCapacity</span><span class="kw">:</span><span class="at"> </span><span class="dv">100</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">MinCapacity</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ResourceId</span><span class="kw">:</span><span class="at"> table/MyTable</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ScalableDimension</span><span class="kw">:</span><span class="at"> dynamodb:table:ReadCapacityUnits</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">ServiceNamespace</span><span class="kw">:</span><span class="at"> dynamodb</span></span></code></pre></div>
+<h3 id="impact-of-the-maximum-limit">Impact of the Maximum Limit</h3>
+<ul>
+<li><strong>Cost Protection:</strong> DynamoDB charges for provisioned
+capacity whether it is fully utilized or not. <code>MaxCapacity</code>
+acts as a cost ceiling, preventing runaway scaling events caused by
+sudden, massive traffic spikes or application bugs.</li>
+<li><strong>Throttling Risk:</strong> If application traffic demands
+more throughput than the configured <code>MaxCapacity</code>, DynamoDB
+will not scale further. Requests that exceed this ceiling will result in
+<code>ProvisionedThroughputExceededException</code> errors. Monitor
+CloudWatch metrics, specifically <code>ThrottledRequests</code>, to
+verify if the limit needs adjustment.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-auto-scaling-max-throughput-setting';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

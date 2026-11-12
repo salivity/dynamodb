@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Continuous Backups Impact on Read Throughput - dynamodb</title>
+    <meta name="description" content="Enabling continuous backups—known as Point-in-Time Recovery (PITR)—on an Amazon DynamoDB table has zero impact on read throughput, latency, or available read capacity units (RCUs). DynamoDB&#39;s native backup architecture operates entirely out-of-band from u">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-continuous-backups-impact-on-read-throughput">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Continuous Backups Impact on Read Throughput - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-continuous-backups-impact-on-read-throughput" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Enabling continuous backups—known as Point-in-Time Recovery (PITR)—on an Amazon DynamoDB table has zero impact on read throughput, latency, or available read capacity units (RCUs). DynamoDB&#39;s native backup architecture operates entirely out-of-band from u" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-continuous-backups-impact-on-read-throughput">DynamoDB
+Continuous Backups Impact on Read Throughput</h1>
+<p>Enabling continuous backups—known as Point-in-Time Recovery (PITR)—on
+an Amazon DynamoDB table has zero impact on read throughput, latency, or
+available read capacity units (RCUs). DynamoDB's native backup
+architecture operates entirely out-of-band from user-facing database
+operations. Consequently, production workloads can read and query data
+at normal speeds and capacity levels without degradation, regardless of
+whether continuous backups are enabled.</p>
+<h2 id="how-continuous-backups-work-behind-the-scenes">How Continuous
+Backups Work Behind the Scenes</h2>
+<p>DynamoDB uses a distributed storage system where continuous backups
+are handled asynchronously by background AWS infrastructure. When you
+turn on Point-in-Time Recovery, DynamoDB continuously archives
+incremental log changes and storage checkpoints directly to an isolated
+backup tier.</p>
+<p>Because this archival process runs at the underlying storage layer,
+it completely bypasses the request-routing and request-processing
+engines that serve your application traffic.</p>
+<h2 id="no-capacity-consumption">No Capacity Consumption</h2>
+<p>A primary concern when managing databases is whether maintenance
+tasks consume provisioned throughput. With DynamoDB continuous
+backups:</p>
+<ul>
+<li><strong>Zero Read Capacity Units (RCUs) Consumed:</strong> The
+backup system does not issue <code>GetItem</code>, <code>Query</code>,
+or <code>Scan</code> operations against your table. Your allocated RCUs
+(in provisioned mode) or read request units (in on-demand mode) remain
+100% available for application workloads.</li>
+<li><strong>No Table Scans:</strong> Traditional custom backup solutions
+rely on scanning the entire table, which drastically consumes read
+capacity. Native PITR avoids this entirely.</li>
+</ul>
+<h2 id="predictable-latency-and-performance">Predictable Latency and
+Performance</h2>
+<p>Because continuous backup operations do not contend for the same
+compute or memory resources that process table requests, you will
+experience:</p>
+<ul>
+<li><strong>Consistent Single-Digit Millisecond Latency:</strong> P99
+and average read latencies remain constant before, during, and after
+continuous backups are enabled.</li>
+<li><strong>No Throttling Risks:</strong> Read requests will not be
+throttled (<code>ProvisionedThroughputExceededException</code>) as a
+result of continuous backup operations.</li>
+</ul>
+<h2 id="cost-vs-performance-trade-off">Cost vs. Performance
+Trade-off</h2>
+<p>While enabling continuous backups carries no performance or
+throughput penalty, it does introduce a separate billing dimension. You
+pay an hourly rate based on the size of the DynamoDB table data and
+continuous backup storage. In short, the trade-off for continuous
+backups is strictly financial, never operational or
+performance-based.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-continuous-backups-impact-on-read-throughput';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

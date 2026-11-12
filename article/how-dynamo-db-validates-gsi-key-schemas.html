@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Validates GSI Key Schemas - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB is predominantly a schemaless NoSQL database, but it enforces strict schema validation on the primary keys of base tables and Global Secondary Indexes (GSIs). This article explains how DynamoDB executes schema validation for GSI keys durin">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-validates-gsi-key-schemas">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Validates GSI Key Schemas - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-validates-gsi-key-schemas" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB is predominantly a schemaless NoSQL database, but it enforces strict schema validation on the primary keys of base tables and Global Secondary Indexes (GSIs). This article explains how DynamoDB executes schema validation for GSI keys durin" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-validates-gsi-key-schemas">How DynamoDB Validates
+GSI Key Schemas</h1>
+<p>Amazon DynamoDB is predominantly a schemaless NoSQL database, but it
+enforces strict schema validation on the primary keys of base tables and
+Global Secondary Indexes (GSIs). This article explains how DynamoDB
+executes schema validation for GSI keys during index creation, runtime
+item ingestion, and background backfilling, detailing the mechanics of
+scalar type enforcement, sparse indexing behavior, and size
+constraints.</p>
+<h3 id="schema-definition-validation">Schema Definition Validation</h3>
+<p>Validation begins when a GSI is defined using the AWS Management
+Console, CLI, or API (such as <code>CreateTable</code> or
+<code>UpdateTable</code>). DynamoDB validates the structural parameters
+of the GSI key schema before provisioning resources.</p>
+<p>A GSI key schema must specify a partition key and can optionally
+include a sort key. DynamoDB restricts GSI key data types strictly to
+scalar types: String (<code>S</code>), Number (<code>N</code>), or
+Binary (<code>B</code>). If you attempt to define a key schema using
+complex or document types—such as Lists (<code>L</code>), Maps
+(<code>M</code>), or Sets (<code>SS</code>, <code>NS</code>,
+<code>BS</code>)—the request is immediately rejected with a
+<code>ValidationException</code>.</p>
+<h3 id="write-time-type-enforcement">Write-Time Type Enforcement</h3>
+<p>When a client executes a write operation (<code>PutItem</code>,
+<code>UpdateItem</code>, or <code>BatchWriteItem</code>) on the base
+table, DynamoDB validates the incoming payload against all defined GSI
+key schemas.</p>
+<p>If the item includes an attribute whose name corresponds to a GSI
+partition key or sort key, DynamoDB checks the data type of the supplied
+value against the type defined in the GSI schema. If there is a
+mismatch—for instance, providing a String value for a GSI key defined as
+a Number—DynamoDB rejects the entire write operation with a
+<code>ValidationException</code>. The write fails for the base table as
+well; partial writes across the base table and its secondary indexes are
+not permitted.</p>
+<h3 id="sparse-indexing-and-attribute-omission">Sparse Indexing and
+Attribute Omission</h3>
+<p>DynamoDB does not treat missing key attributes as schema validation
+failures. Instead, it utilizes sparse indexing.</p>
+<p>If an item is written to the base table without the attribute
+matching the GSI partition key (or sort key), DynamoDB considers this
+valid. It simply omits the item from the GSI while committing it to the
+base table. An item is only validated against the GSI schema and
+projected into the index if the attribute defining the GSI partition key
+is explicitly present in the item.</p>
+<h3 id="value-size-and-constraint-checks">Value Size and Constraint
+Checks</h3>
+<p>During runtime validation, DynamoDB checks the physical size limits
+of the GSI key attributes:</p>
+<ul>
+<li><strong>Partition Key:</strong> The maximum length of a GSI
+partition key value is 2048 bytes.</li>
+<li><strong>Sort Key:</strong> The maximum length of a GSI sort key
+value is 1024 bytes.</li>
+<li><strong>Empty Values:</strong> Empty String and Binary key
+attributes are permitted, provided they conform to DynamoDB's general
+attribute constraints, but they must still strictly adhere to the
+designated data type.</li>
+</ul>
+<p>If a write operation provides a key attribute value that exceeds
+these byte thresholds, DynamoDB halts execution and returns a client
+error indicating that the key size limit has been exceeded.</p>
+<h3 id="asynchronous-backfill-validation">Asynchronous Backfill
+Validation</h3>
+<p>When creating a new GSI on an existing table with pre-existing data,
+DynamoDB validates items asynchronously through a background backfill
+process.</p>
+<p>DynamoDB scans all existing table items to project eligible entries
+into the new index. If the background process encounters an item with an
+attribute name matching the new GSI key but holding an incompatible data
+type, the backfill process cannot map the item. In modern DynamoDB
+implementations, type mismatches detected during backfill cause the
+index creation state to transition to <code>CREATING</code> and
+ultimately fail, setting the index to an unusable state or deleting
+it.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-validates-gsi-key-schemas';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

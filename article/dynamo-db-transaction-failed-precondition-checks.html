@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Transaction Failed Precondition Checks - dynamodb</title>
+    <meta name="description" content="When an Amazon DynamoDB transaction encounters a failed precondition check, the entire transaction is immediately canceled to preserve strict atomicity. In transactional writes (TransactWriteItems), all specified operations succeed or fail together. If a">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-failed-precondition-checks">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Transaction Failed Precondition Checks - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-transaction-failed-precondition-checks" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When an Amazon DynamoDB transaction encounters a failed precondition check, the entire transaction is immediately canceled to preserve strict atomicity. In transactional writes (TransactWriteItems), all specified operations succeed or fail together. If a" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-transaction-failed-precondition-checks">DynamoDB
+Transaction Failed Precondition Checks</h1>
+<p>When an Amazon DynamoDB transaction encounters a failed precondition
+check, the entire transaction is immediately canceled to preserve strict
+atomicity. In transactional writes (<code>TransactWriteItems</code>),
+all specified operations succeed or fail together. If a conditional
+expression on any single item evaluates to false, DynamoDB rolls back
+every pending mutation, writes no data to the database, and returns a
+<code>TransactionCanceledException</code> containing detailed diagnostic
+information about which item triggered the failure.</p>
+<h3 id="immediate-all-or-nothing-rollback">Immediate All-or-Nothing
+Rollback</h3>
+<p>DynamoDB transactions enforce ACID properties. When executing a
+<code>TransactWriteItems</code> call, DynamoDB performs a validation and
+preparation phase. If any condition expression (precondition check) in
+the request fails during this phase:</p>
+<ul>
+<li><strong>Zero state changes occur:</strong> No items are created,
+updated, or deleted, even if the other operations in the transaction
+were valid and satisfied their respective conditions.</li>
+<li><strong>Isolation is maintained:</strong> Concurrent read operations
+will never observe partial updates from a canceled transaction.</li>
+</ul>
+<h3 id="error-structure-transactioncanceledexception">Error Structure:
+<code>TransactionCanceledException</code></h3>
+<p>When a precondition check fails, DynamoDB raises a
+<code>TransactionCanceledException</code>. The response object contains
+a critical array named <code>CancellationReasons</code>.</p>
+<p>This array corresponds directly to the order of operations submitted
+in the <code>TransactWriteItems</code> call:</p>
+<ul>
+<li>The operation that failed the precondition will have a
+<code>Code</code> of <code>ConditionalCheckFailed</code>.</li>
+<li>Operations that were otherwise valid but canceled due to the failing
+operation will have a <code>Code</code> of <code>None</code>.</li>
+<li>If an item also encountered another issue, such as a validation
+error, its corresponding reason will reflect that specific failure
+code.</li>
+</ul>
+<p>By inspecting the index of the <code>ConditionalCheckFailed</code>
+entry within <code>CancellationReasons</code>, applications can
+determine precisely which item and condition caused the transaction to
+abort.</p>
+<h3 id="consumed-capacity-impact">Consumed Capacity Impact</h3>
+<p>Precondition failures do not bypass DynamoDB pricing or throughput
+metrics:</p>
+<ul>
+<li><strong>Capacity is consumed:</strong> DynamoDB consumes read
+capacity units (RCUs) or write capacity units (WCUs)—or their on-demand
+equivalents—to evaluate condition expressions.</li>
+<li><strong>Billing for evaluation:</strong> Even though no items are
+committed, the transactional reads and validation checks required to
+determine that the precondition failed are billed to your account.</li>
+</ul>
+<h3 id="recommended-handling-strategies">Recommended Handling
+Strategies</h3>
+<p>When an application receives a
+<code>TransactionCanceledException</code> due to a failed conditional
+check:</p>
+<ol type="1">
+<li><strong>Inspect <code>CancellationReasons</code>:</strong> Parse the
+response to verify whether the failure was an expected concurrency state
+(such as an optimistic locking version mismatch) or an unexpected data
+validation issue.</li>
+<li><strong>Handle Optimistic Locking Conflicts:</strong> If the
+precondition was used to prevent race conditions (e.g., checking an item
+version), refresh the local state by fetching the latest item attributes
+and retry the transaction with updated condition parameters.</li>
+<li><strong>Avoid Blind Retries:</strong> If the failed precondition
+represents an immutable business rule (e.g., checking that a bank
+balance is greater than zero), retrying immediately without changing the
+underlying request or state will continually fail and consume
+capacity.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-transaction-failed-precondition-checks';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

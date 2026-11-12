@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Managing Endpoints in DynamoDB Global Tables - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB global tables provide a fully managed, multi-region, active-active database solution for globally distributed applications. Because DynamoDB does not provide a single, global URL for access, applications must actively manage how they conne">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/managing-endpoints-in-dynamo-db-global-tables">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Managing Endpoints in DynamoDB Global Tables - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/managing-endpoints-in-dynamo-db-global-tables" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB global tables provide a fully managed, multi-region, active-active database solution for globally distributed applications. Because DynamoDB does not provide a single, global URL for access, applications must actively manage how they conne" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="managing-endpoints-in-dynamodb-global-tables">Managing Endpoints
+in DynamoDB Global Tables</h1>
+<p>Amazon DynamoDB global tables provide a fully managed, multi-region,
+active-active database solution for globally distributed applications.
+Because DynamoDB does not provide a single, global URL for access,
+applications must actively manage how they connect to regional
+endpoints. This article explains how client applications configure
+regional endpoints using the AWS SDK, implement routing strategies, and
+handle failover scenarios across multiple AWS regions.</p>
+<h3 id="client-side-regional-endpoint-configuration">Client-Side
+Regional Endpoint Configuration</h3>
+<p>DynamoDB global tables consist of multiple replica tables, with one
+replica per chosen AWS region. Unlike services that provide a single
+global DNS endpoint, DynamoDB requires client applications to explicitly
+target a specific region-specific endpoint (such as
+<code>dynamodb.us-east-1.amazonaws.com</code> or
+<code>dynamodb.eu-west-1.amazonaws.com</code>).</p>
+<p>When initializing the AWS SDK within an application, developers
+instantiate the DynamoDB client by specifying the local AWS region. For
+instance, an application instance running in <code>us-east-1</code>
+configures its SDK client to target the <code>us-east-1</code> DynamoDB
+endpoint, while an instance running in <code>eu-west-1</code> targets
+<code>eu-west-1</code>.</p>
+<h3 id="in-region-routing-for-optimal-latency">In-Region Routing for
+Optimal Latency</h3>
+<p>Because DynamoDB global tables are fully active-active, read and
+write operations can be performed against any replica table.
+Applications leverage in-region routing by having each application
+deployment communicate exclusively with the DynamoDB endpoint in its own
+region.</p>
+<ul>
+<li><strong>Writes:</strong> When an application writes to its local
+regional endpoint, DynamoDB acknowledges the write locally and then
+asynchronously replicates the change across all other configured
+regions.</li>
+<li><strong>Reads:</strong> Applications read from their local endpoint,
+ensuring single-digit millisecond latency without crossing geographical
+boundaries. Reads can be eventually consistent or strongly consistent
+within that specific replica.</li>
+</ul>
+<h3 id="handling-multi-region-routing-and-failovers">Handling
+Multi-Region Routing and Failovers</h3>
+<p>Applications must manage endpoint switching dynamically to maintain
+high availability in the event of regional outages or degraded
+performance. Common approaches include:</p>
+<ol type="1">
+<li><p><strong>Pre-configured Multi-Region SDK Clients:</strong> The
+application instantiates client objects for multiple regions at startup
+(for example, a primary client for <code>us-east-1</code> and a fallback
+client for <code>us-west-2</code>). If requests to the primary regional
+endpoint encounter persistent network failures or high latency, the
+application's internal error-handling logic immediately routes
+subsequent operations to the backup regional client.</p></li>
+<li><p><strong>Dynamic Configuration Services:</strong> Solutions like
+AWS AppConfig or Parameter Store allow operations teams to update the
+target regional endpoint dynamically. The application listens for
+configuration updates and reinitializes the DynamoDB client with the new
+region's endpoint without requiring a code redeployment or
+restart.</p></li>
+<li><p><strong>DNS and Global Traffic Management:</strong> When compute
+resources are routed using global traffic managers like Amazon Route 53
+or AWS Global Accelerator, the traffic manager steers user requests to
+healthy application tiers in surviving regions. Once user traffic shifts
+to a new region, that regional application stack automatically accesses
+its local DynamoDB regional endpoint.</p></li>
+<li><p><strong>AWS Route 53 Application Recovery Controller
+(ARC):</strong> For critical workloads, ARC manages multi-region
+failovers by using readiness checks and routing controls to orchestrate
+traffic redirection and ensure client applications connect to healthy
+endpoints.</p></li>
+</ol>
+<h3 id="retry-logic-and-replication-considerations">Retry Logic and
+Replication Considerations</h3>
+<p>When managing regional endpoints, applications must account for the
+asynchronous replication latency inherent to global tables. If a client
+fails over from one regional endpoint to another during an ongoing
+transaction, it may encounter eventual consistency delays before
+recently written data appears in the secondary region. Utilizing
+exponential backoff, standard AWS SDK retries, and idempotency tokens
+helps mitigate duplicate transactions during transient endpoint
+failovers.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/managing-endpoints-in-dynamo-db-global-tables';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

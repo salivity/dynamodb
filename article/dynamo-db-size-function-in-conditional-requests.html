@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Size Function in Conditional Requests - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB allows developers to perform conditional write operations using the size function to evaluate the length or element count of an attribute before applying changes. When a conditional request containing a size comparison is submitted, Dynamo">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-size-function-in-conditional-requests">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Size Function in Conditional Requests - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-size-function-in-conditional-requests" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB allows developers to perform conditional write operations using the size function to evaluate the length or element count of an attribute before applying changes. When a conditional request containing a size comparison is submitted, Dynamo" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-size-function-in-conditional-requests">DynamoDB Size
+Function in Conditional Requests</h1>
+<p>Amazon DynamoDB allows developers to perform conditional write
+operations using the <code>size</code> function to evaluate the length
+or element count of an attribute before applying changes. When a
+conditional request containing a <code>size</code> comparison is
+submitted, DynamoDB retrieves the existing item, calculates the size of
+the target attribute based on its data type, and compares that value
+against a specified threshold using standard comparison operators. If
+the condition evaluates to true, the write operation proceeds;
+otherwise, DynamoDB halts the operation and returns a
+<code>ConditionalCheckFailedException</code>.</p>
+<h2 id="how-the-size-function-works">How the <code>size</code> Function
+Works</h2>
+<p>The <code>size</code> function takes an attribute path as an
+argument—expressed as <code>size(path)</code>—and returns a number
+representing the size of that attribute. The returned value depends on
+the attribute's data type:</p>
+<ul>
+<li><strong>String:</strong> Returns the length of the string in bytes
+(UTF-8 encoded), not the character count.</li>
+<li><strong>Binary:</strong> Returns the total number of bytes in the
+binary attribute.</li>
+<li><strong>String Set (SS), Number Set (NS), Binary Set (BS):</strong>
+Returns the number of distinct elements contained in the set.</li>
+<li><strong>List (L):</strong> Returns the number of elements in the
+list.</li>
+<li><strong>Map (M):</strong> Returns the number of key-value pairs in
+the map.</li>
+</ul>
+<p>The <code>size</code> function cannot be evaluated directly on scalar
+Number, Boolean, or Null data types. Attempting to pass these data types
+to <code>size</code> results in a <code>ValidationException</code>.</p>
+<h2 id="evaluation-workflow-during-conditional-writes">Evaluation
+Workflow During Conditional Writes</h2>
+<p>When executing write operations—such as <code>PutItem</code>,
+<code>UpdateItem</code>, or <code>DeleteItem</code>—containing a
+<code>ConditionExpression</code> with <code>size</code>, DynamoDB
+follows a specific evaluation pipeline:</p>
+<ol type="1">
+<li><strong>Item Retrieval:</strong> DynamoDB identifies the target
+partition and reads the existing item directly from storage. Conditional
+checks are always performed with strong read consistency.</li>
+<li><strong>Path Resolution:</strong> The engine checks whether the
+attribute specified inside <code>size(path)</code> exists within the
+existing item. If the path does not exist, the evaluation yields an
+error/false condition unless explicitly guarded by other conditions like
+<code>attribute_exists</code>.</li>
+<li><strong>Metric Calculation:</strong> DynamoDB determines the data
+type of the resolved attribute and calculates the numeric size according
+to the rules defined above.</li>
+<li><strong>Relational Evaluation:</strong> DynamoDB applies the
+comparison operator (<code>=</code>, <code>&lt;&gt;</code>,
+<code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>,
+<code>&gt;=</code>) between the computed size and the comparator value
+(usually an expression attribute value).</li>
+<li><strong>Execution or Failure:</strong>
+<ul>
+<li>If the condition evaluates to <strong>true</strong>, the mutation
+applies atomically to the item.</li>
+<li>If the condition evaluates to <strong>false</strong>, the operation
+is rejected immediately, no data is written, and DynamoDB returns a
+<code>ConditionalCheckFailedException</code>.</li>
+</ul></li>
+</ol>
+<h2 id="common-comparison-patterns">Common Comparison Patterns</h2>
+<p>The <code>size</code> function is frequently used to enforce business
+constraints and prevent unbounded growth of document attributes:</p>
+<ul>
+<li><strong>Bounding Collection Sizes:</strong> Preventing a list from
+exceeding a specific capacity (e.g.,
+<code>size(log_entries) &lt; :max_limit</code>).</li>
+<li><strong>Restricting Payload Sizes:</strong> Ensuring uploaded
+strings or binary buffers do not exceed memory thresholds (e.g.,
+<code>size(payload) &lt;= :max_bytes</code>).</li>
+<li><strong>Checking for Emptiness:</strong> Ensuring that an array,
+set, or map contains elements before executing an update (e.g.,
+<code>size(tags) &gt; :zero</code>).</li>
+</ul>
+<h2 id="capacity-and-cost-considerations">Capacity and Cost
+Considerations</h2>
+<p>Evaluating conditions with the <code>size</code> function does not
+consume separate read capacity units. Instead, the conditional check is
+factored into the write request. If the condition fails, DynamoDB still
+consumes write capacity units equivalent to the cost of reading the item
+to validate the condition.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-size-function-in-conditional-requests';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

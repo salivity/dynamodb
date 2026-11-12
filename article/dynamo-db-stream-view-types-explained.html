@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Stream View Types Explained - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Streams capture a time-ordered sequence of item-level modifications in a DynamoDB table. The exact information included within each change record is governed entirely by the table&#39;s StreamViewType setting. This article breaks down how the">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-stream-view-types-explained">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Stream View Types Explained - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-stream-view-types-explained" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Streams capture a time-ordered sequence of item-level modifications in a DynamoDB table. The exact information included within each change record is governed entirely by the table&#39;s StreamViewType setting. This article breaks down how the" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-stream-view-types-explained">DynamoDB Stream View Types
+Explained</h1>
+<p>Amazon DynamoDB Streams capture a time-ordered sequence of item-level
+modifications in a DynamoDB table. The exact information included within
+each change record is governed entirely by the table's
+<code>StreamViewType</code> setting. This article breaks down how the
+four distinct stream view types control the data payload written to the
+stream, how different operations affect record output, and how to select
+the correct view type for your workload.</p>
+<h2 id="understanding-the-streamviewtype-attribute">Understanding the
+StreamViewType Attribute</h2>
+<p>When you enable DynamoDB Streams on a table, you must specify the
+<code>StreamViewType</code>. This configuration dictates whether a
+change record includes the primary key attributes only, the entire item
+before the change, the entire item after the change, or both the before
+and after states.</p>
+<p>The choice of <code>StreamViewType</code> directly affects the
+payload size written to the stream, downstream Lambda invocation
+payloads, and overall stream storage consumption.</p>
+<h2 id="the-four-stream-view-types">The Four Stream View Types</h2>
+<p>DynamoDB provides four options for configuring the content of stream
+records:</p>
+<h3 id="1-keys_only">1. KEYS_ONLY</h3>
+<ul>
+<li><strong>Content:</strong> Writes only the partition key and sort key
+(if defined) of the modified item.</li>
+<li><strong>Payload Size:</strong> Minimal.</li>
+<li><strong>Best Used For:</strong> Cache invalidation workflows or
+notifications where downstream consumers only need to know that an item
+changed and can query the table directly if more data is required.</li>
+</ul>
+<h3 id="2-new_image">2. NEW_IMAGE</h3>
+<ul>
+<li><strong>Content:</strong> Writes the complete item as it appears
+immediately after the write operation, including all of its
+attributes.</li>
+<li><strong>Payload Size:</strong> Moderate to high, depending on the
+item's size.</li>
+<li><strong>Best Used For:</strong> Replicating data to external search
+engines (like OpenSearch), feeding data warehouses, or aggregating data
+where only the latest state is relevant.</li>
+</ul>
+<h3 id="3-old_image">3. OLD_IMAGE</h3>
+<ul>
+<li><strong>Content:</strong> Writes the complete item as it appeared
+before the write operation occurred.</li>
+<li><strong>Payload Size:</strong> Moderate to high, depending on the
+item's size.</li>
+<li><strong>Best Used For:</strong> Auditing, archival pipelines, or
+triggering rollback workflows where you need to preserve or analyze the
+previous state of an item.</li>
+</ul>
+<h3 id="4-new_and_old_images">4. NEW_AND_OLD_IMAGES</h3>
+<ul>
+<li><strong>Content:</strong> Writes both the <code>OldImage</code> (the
+state before the write) and the <code>NewImage</code> (the state after
+the write) within the same change record.</li>
+<li><strong>Payload Size:</strong> Largest possible payload among all
+view types.</li>
+<li><strong>Best Used For:</strong> Event-driven architectures that
+require delta calculations, such as tracking inventory adjustments,
+sending notification emails highlighting changed fields, or enforcing
+state-machine transitions.</li>
+</ul>
+<h2 id="behavior-across-database-operations">Behavior Across Database
+Operations</h2>
+<p>The actual data present in a change record also depends on the
+database event type (<code>INSERT</code>, <code>MODIFY</code>, or
+<code>REMOVE</code>):</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th style="text-align: left;">StreamViewType</th>
+<th style="text-align: left;">INSERT Event</th>
+<th style="text-align: left;">MODIFY Event</th>
+<th style="text-align: left;">REMOVE Event</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>KEYS_ONLY</strong></td>
+<td style="text-align: left;">Keys only</td>
+<td style="text-align: left;">Keys only</td>
+<td style="text-align: left;">Keys only</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>NEW_IMAGE</strong></td>
+<td style="text-align: left;">Full new item</td>
+<td style="text-align: left;">Full new item</td>
+<td style="text-align: left;">Keys only (no new image exists)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>OLD_IMAGE</strong></td>
+<td style="text-align: left;">Keys only (no old image exists)</td>
+<td style="text-align: left;">Full old item</td>
+<td style="text-align: left;">Full old item</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>NEW_AND_OLD_IMAGES</strong></td>
+<td style="text-align: left;">Full new item</td>
+<td style="text-align: left;">Both full old and full new items</td>
+<td style="text-align: left;">Full old item</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Note: For <code>INSERT</code> operations under
+<code>OLD_IMAGE</code>, and for <code>REMOVE</code> operations under
+<code>NEW_IMAGE</code>, DynamoDB defaults to returning only the key
+attributes because the corresponding image does not exist.</li>
+</ul>
+<h2 id="choosing-the-right-view-type">Choosing the Right View Type</h2>
+<p>Selecting the proper view type requires balancing downstream data
+requirements against efficiency:</p>
+<ul>
+<li><strong>Bandwidth and Processing:</strong> Passing complete images
+when consumers only need keys creates unnecessary network traffic and
+memory usage in consumer applications like AWS Lambda.</li>
+<li><strong>Idempotency and Diffing:</strong> If consumers must verify
+what specific attribute triggered an event,
+<code>NEW_AND_OLD_IMAGES</code> eliminates the need for the consumer to
+maintain its own state or perform secondary reads against DynamoDB.</li>
+<li><strong>Cost Efficiency:</strong> While DynamoDB Streams read
+request units are billed separately from table operations, smaller
+record payloads reduce latency and memory consumption across the entire
+processing pipeline.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-stream-view-types-explained';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

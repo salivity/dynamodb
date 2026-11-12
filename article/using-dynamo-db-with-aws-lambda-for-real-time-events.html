@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Using DynamoDB with AWS Lambda for Real-Time Events - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB integrates with AWS Lambda through DynamoDB Streams to create an event-driven architecture capable of processing data changes in real time. Whenever an item in a DynamoDB table is created, updated, or deleted, an event record is written to">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/using-dynamo-db-with-aws-lambda-for-real-time-events">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Using DynamoDB with AWS Lambda for Real-Time Events - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/using-dynamo-db-with-aws-lambda-for-real-time-events" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB integrates with AWS Lambda through DynamoDB Streams to create an event-driven architecture capable of processing data changes in real time. Whenever an item in a DynamoDB table is created, updated, or deleted, an event record is written to" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="using-dynamodb-with-aws-lambda-for-real-time-events">Using
+DynamoDB with AWS Lambda for Real-Time Events</h1>
+<p>Amazon DynamoDB integrates with AWS Lambda through DynamoDB Streams
+to create an event-driven architecture capable of processing data
+changes in real time. Whenever an item in a DynamoDB table is created,
+updated, or deleted, an event record is written to a stream, which AWS
+Lambda polls and executes against custom code. This serverless pipeline
+eliminates the need for continuous polling infrastructure, providing a
+scalable and fully managed solution for instant notifications, data
+synchronization, audit trails, and cache invalidation.</p>
+<h3 id="the-foundation-dynamodb-streams">The Foundation: DynamoDB
+Streams</h3>
+<p>The core component enabling this integration is DynamoDB Streams.
+When enabled on a table, the stream captures an ordered, time-sequenced
+log of item-level modifications over a 24-hour rolling window.</p>
+<p>DynamoDB Streams provides four view types to determine what data is
+sent to the consumer:</p>
+<ul>
+<li><strong>Keys only:</strong> Captures only the key attributes of the
+modified item.</li>
+<li><strong>New image:</strong> Captures the entire item as it appears
+after the modification.</li>
+<li><strong>Old image:</strong> Captures the entire item as it appeared
+before the modification.</li>
+<li><strong>New and old images:</strong> Captures both the
+pre-modification and post-modification states of the item.</li>
+</ul>
+<h3 id="how-the-integration-works">How the Integration Works</h3>
+<p>The integration relies on an AWS Lambda feature called <strong>Event
+Source Mapping</strong>. Under the hood, Lambda manages the polling
+process on your behalf:</p>
+<ol type="1">
+<li><strong>Shard Division:</strong> DynamoDB Streams partitions its log
+into shards based on data volume and throughput.</li>
+<li><strong>Internal Poller:</strong> AWS Lambda provisions an internal
+poller that constantly reads the stream shards using the DynamoDB
+Streams API.</li>
+<li><strong>Batching Records:</strong> The poller groups multiple stream
+records into a single batch based on your configuration.</li>
+<li><strong>Synchronous Invocation:</strong> Lambda invokes your
+function synchronously, passing the batch of records in the
+<code>event</code> payload.</li>
+<li><strong>Checkpointing:</strong> Once the Lambda function completes
+successfully, the poller advances its position (shard iterator) and
+retrieves the next set of records.</li>
+</ol>
+<h3 id="essential-configuration-controls">Essential Configuration
+Controls</h3>
+<p>To optimize throughput, latency, and reliability, several controls
+are configured within the Lambda event source mapping:</p>
+<ul>
+<li><strong>Batch Size:</strong> Determines the maximum number of stream
+records sent to a function in a single call (up to 10,000 records).</li>
+<li><strong>Batch Window:</strong> The maximum amount of time (in
+seconds) the poller waits to collect records before invoking the
+function, useful for low-throughput tables to reduce invocations.</li>
+<li><strong>Parallelization Factor:</strong> By default, each shard is
+processed by one concurrent Lambda function to maintain strict ordering.
+You can increase this factor (up to 10) to process multiple concurrent
+batches per partition key within a single shard, increasing processing
+throughput.</li>
+<li><strong>Bisect Batch on Function Error:</strong> If a function
+returns an error, Lambda splits the failing batch in half and retries
+each half separately until it isolates the problematic record.</li>
+<li><strong>Failure Destinations (DLQ):</strong> Configures an Amazon
+SQS queue or Amazon SNS topic to receive records that exceed the maximum
+retry attempts, preventing single malformed records ("poison pills")
+from blocking the entire shard.</li>
+</ul>
+<h3 id="common-use-cases">Common Use Cases</h3>
+<ul>
+<li><strong>Search and Analytics Synchronization:</strong> Stream
+changes directly to search engines like Amazon OpenSearch or analytics
+data lakes in Amazon S3 for near real-time query updates.</li>
+<li><strong>Cache Invalidation:</strong> Automatically purge or update
+stale records in caching tiers such as Amazon ElastiCache or Redis
+whenever the primary DynamoDB database updates.</li>
+<li><strong>Real-Time Notifications:</strong> Trigger transactional
+emails, SMS messages, or push alerts via Amazon SNS or Amazon SES
+immediately after specific table updates occur.</li>
+<li><strong>Data Aggregation and Metrics:</strong> Calculate running
+balances, usage metrics, or aggregate counters and store them in
+separate tracking tables.</li>
+</ul>
+<h3 id="best-practices">Best Practices</h3>
+<ul>
+<li><strong>Design for Idempotency:</strong> Because DynamoDB Streams
+guarantees "at-least-once" delivery, transient network issues or retries
+can cause duplicate function invocations. Ensure your Lambda logic
+safely handles processing the same record more than once.</li>
+<li><strong>Keep Lambda Execution Times Low:</strong> Slow function
+execution blocks the stream poller from advancing through a shard,
+potentially causing an iterator age spike where processing falls behind
+real-time.</li>
+<li><strong>Monitor IteratorAge:</strong> Use Amazon CloudWatch to
+monitor the <code>IteratorAge</code> metric. A rising value indicates
+that Lambda cannot process records as fast as they are being written to
+DynamoDB.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/using-dynamo-db-with-aws-lambda-for-real-time-events';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Continuous Monitoring with CloudTrail - dynamodb</title>
+    <meta name="description" content="Continuous monitoring of Amazon DynamoDB with AWS CloudTrail is achieved by automatically capturing, auditing, and analyzing API activity across your database resources. By integrating DynamoDB with CloudTrail, organizations can track both management acti">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-continuous-monitoring-with-cloud-trail">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Continuous Monitoring with CloudTrail - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-continuous-monitoring-with-cloud-trail" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Continuous monitoring of Amazon DynamoDB with AWS CloudTrail is achieved by automatically capturing, auditing, and analyzing API activity across your database resources. By integrating DynamoDB with CloudTrail, organizations can track both management acti" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-continuous-monitoring-with-cloudtrail">DynamoDB
+Continuous Monitoring with CloudTrail</h1>
+<p>Continuous monitoring of Amazon DynamoDB with AWS CloudTrail is
+achieved by automatically capturing, auditing, and analyzing API
+activity across your database resources. By integrating DynamoDB with
+CloudTrail, organizations can track both management actions and
+data-level operations in near-real time, enabling compliance auditing,
+security threat detection, and operational troubleshooting.</p>
+<h3 id="capturing-control-plane-and-data-plane-events">Capturing Control
+Plane and Data Plane Events</h3>
+<p>DynamoDB operations are split into two categories, both of which
+CloudTrail can record:</p>
+<ol type="1">
+<li><strong>Control Plane Events (Management Events):</strong>
+CloudTrail monitors administrative actions by default. This includes
+actions such as <code>CreateTable</code>, <code>UpdateTable</code>,
+<code>DeleteTable</code>, <code>CreateBackup</code>, and modifying
+time-to-live (TTL) settings. These logs record who created or altered a
+resource, the request parameters, the IP address of the requester, and
+the timestamp.</li>
+<li><strong>Data Plane Events (Data Events):</strong> Because data
+operations occur at high velocity, data-level logging is not enabled by
+default. You can configure CloudTrail data events to log item-level
+actions, including <code>GetItem</code>, <code>PutItem</code>,
+<code>UpdateItem</code>, <code>DeleteItem</code>,
+<code>BatchGetItem</code>, and <code>Query</code>. This provides a
+complete audit trail of user access and modifications to stored
+data.</li>
+</ol>
+<h3 id="the-continuous-monitoring-architecture">The Continuous
+Monitoring Architecture</h3>
+<p>To establish an automated, continuous monitoring pipeline for
+DynamoDB using CloudTrail, AWS services work together through the
+following workflow:</p>
+<ul>
+<li><strong>Event Ingestion:</strong> Whenever an identity or service
+interacts with DynamoDB through the AWS Management Console, SDKs, or AWS
+CLI, the request is recorded as an event by CloudTrail.</li>
+<li><strong>Log Delivery:</strong> CloudTrail packages these events into
+JSON files and delivers them to an Amazon S3 bucket for long-term
+retention. For continuous and near-real-time processing, CloudTrail
+streams these events directly to Amazon CloudWatch Logs.</li>
+<li><strong>Metric Filters and Alarms:</strong> Within CloudWatch Logs,
+you can define metric filters to scan log entries for specific
+patterns—such as unauthorized API calls (<code>AccessDenied</code>
+errors), sensitive item deletions, or unexpected table schema updates.
+CloudWatch Alarms can then notify administrators via Amazon SNS if
+defined thresholds are breached.</li>
+<li><strong>Automated Remediation with EventBridge:</strong> CloudTrail
+events can be evaluated in real time using Amazon EventBridge. When a
+high-risk DynamoDB event occurs (such as a <code>DeleteTable</code> API
+call on a production database), EventBridge rules can immediately
+trigger an AWS Lambda function to block the user, revert the change, or
+send an urgent alert to security teams.</li>
+</ul>
+<h3 id="security-and-compliance-analysis">Security and Compliance
+Analysis</h3>
+<p>In addition to alerting, continuous CloudTrail logging supports
+broader security analysis:</p>
+<ul>
+<li><strong>AWS CloudTrail Lake:</strong> Allows you to run SQL-based
+queries across historical DynamoDB logs to detect usage trends,
+investigate compromised credentials, or verify compliance with
+frameworks like HIPAA and PCI-DSS.</li>
+<li><strong>AWS GuardDuty:</strong> Consumes CloudTrail management and
+data logs to detect anomalous behavior, such as a compromised IAM role
+performing abnormal bulk exports or scans on DynamoDB tables.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-continuous-monitoring-with-cloud-trail';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

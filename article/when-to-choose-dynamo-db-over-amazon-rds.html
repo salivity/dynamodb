@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>When to Choose DynamoDB Over Amazon RDS - dynamodb</title>
+    <meta name="description" content="Choosing between Amazon DynamoDB and Amazon Relational Database Service (RDS) depends on your application&#39;s data structure, query patterns, and scalability requirements. While RDS is the standard choice for structured, relational data requiring complex jo">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/when-to-choose-dynamo-db-over-amazon-rds">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="When to Choose DynamoDB Over Amazon RDS - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/when-to-choose-dynamo-db-over-amazon-rds" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Choosing between Amazon DynamoDB and Amazon Relational Database Service (RDS) depends on your application&#39;s data structure, query patterns, and scalability requirements. While RDS is the standard choice for structured, relational data requiring complex jo" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="when-to-choose-dynamodb-over-amazon-rds">When to Choose DynamoDB
+Over Amazon RDS</h1>
+<p>Choosing between Amazon DynamoDB and Amazon Relational Database
+Service (RDS) depends on your application's data structure, query
+patterns, and scalability requirements. While RDS is the standard choice
+for structured, relational data requiring complex joins and multi-table
+ACID transactions, DynamoDB is the superior option for applications
+demanding single-digit millisecond latency at any scale, massive write
+throughput, flexible schemas, and zero server maintenance.</p>
+<h3 id="single-digit-millisecond-latency-at-scale">Single-Digit
+Millisecond Latency at Scale</h3>
+<p>DynamoDB provides consistent, predictable performance regardless of
+data volume. In Amazon RDS, query latency can degrade as tables grow and
+joins become expensive. DynamoDB eliminates this issue by enforcing
+partition-key-based lookups, guaranteeing response times under 10
+milliseconds whether your database holds ten gigabytes or hundreds of
+terabytes.</p>
+<h3 id="massive-and-unpredictable-scale">Massive and Unpredictable
+Scale</h3>
+<p>If your application experiences viral traffic spikes or handles
+millions of requests per second, DynamoDB scales horizontally without
+disruption. RDS primarily scales vertically (requiring larger instances)
+and relies on read replicas for read-heavy workloads, which introduces
+replication lag and architectural complexity. DynamoDB handles
+auto-partitioning natively, dynamically distributing throughput across
+storage nodes without manual intervention.</p>
+<h3 id="serverless-and-maintenance-free-workloads">Serverless and
+Maintenance-Free Workloads</h3>
+<p>DynamoDB is fully serverless. You do not need to provision database
+instances, manage underlying operating systems, configure connection
+pools, or schedule downtime for software patching. With DynamoDB's
+On-Demand capacity mode, you pay strictly for the read and write
+requests you execute, making it ideal for event-driven applications,
+microservices, and workloads with unpredictable or bursty traffic.</p>
+<h3 id="known-simple-access-patterns">Known, Simple Access Patterns</h3>
+<p>DynamoDB requires you to model your data around specific access
+patterns rather than normalized relational entities. If your application
+queries data using specific identifiers (such as <code>user_id</code>,
+<code>order_id</code>, or <code>device_id</code>) and does not require
+ad-hoc analytical queries or dynamic cross-table joins, DynamoDB is far
+faster, simpler, and more cost-effective than a relational engine.</p>
+<h3 id="flexible-and-evolving-schemas">Flexible and Evolving
+Schemas</h3>
+<p>Relational databases enforce strict schemas where structural changes
+require <code>ALTER TABLE</code> operations that can lock tables and
+cause downtime. DynamoDB is a NoSQL key-value and document store. It
+allows items in the same table to have varying attributes, making it
+exceptionally well-suited for rapidly evolving applications, catalogs
+with heterogeneous attributes, and JSON-based payloads.</p>
+<h3 id="event-driven-architectures">Event-Driven Architectures</h3>
+<p>DynamoDB integrates natively with AWS serverless services through
+DynamoDB Streams. Every insert, update, or delete event can instantly
+trigger AWS Lambda functions to execute downstream business logic,
+update search indexes, or push notifications. While RDS can support
+change data capture (CDC), DynamoDB Streams provides this functionality
+out of the box with zero impact on database performance.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/when-to-choose-dynamo-db-over-amazon-rds';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

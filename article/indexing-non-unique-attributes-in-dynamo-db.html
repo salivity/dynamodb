@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indexing Non-Unique Attributes in DynamoDB - dynamodb</title>
+    <meta name="description" content="Indexing non-unique attributes in Amazon DynamoDB through Global Secondary Indexes (GSIs) or Local Secondary Indexes (LSIs) is a standard design pattern, but it significantly alters how queries perform, scale, and consume capacity. While it allows applica">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/indexing-non-unique-attributes-in-dynamo-db">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Indexing Non-Unique Attributes in DynamoDB - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/indexing-non-unique-attributes-in-dynamo-db" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Indexing non-unique attributes in Amazon DynamoDB through Global Secondary Indexes (GSIs) or Local Secondary Indexes (LSIs) is a standard design pattern, but it significantly alters how queries perform, scale, and consume capacity. While it allows applica" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="indexing-non-unique-attributes-in-dynamodb">Indexing Non-Unique
+Attributes in DynamoDB</h1>
+<p>Indexing non-unique attributes in Amazon DynamoDB through Global
+Secondary Indexes (GSIs) or Local Secondary Indexes (LSIs) is a standard
+design pattern, but it significantly alters how queries perform, scale,
+and consume capacity. While it allows applications to query data across
+attributes that contain duplicate values—such as statuses, categories,
+or timestamps—low cardinality on index partition keys can introduce
+performance bottlenecks, throttling, and pagination overhead.
+Understanding the mechanics of attribute distribution, partition health,
+and result set sizes is essential for maintaining optimal query
+speeds.</p>
+<h3 id="partition-key-cardinality-and-hot-partitions">Partition Key
+Cardinality and Hot Partitions</h3>
+<p>The primary factor dictating query performance on non-unique indexed
+attributes is cardinality—the number of distinct values the attribute
+holds. DynamoDB relies on partition keys to distribute data across
+multiple physical storage nodes.</p>
+<p>When you use a non-unique attribute with low cardinality (such as a
+binary <code>status</code> field like <code>ACTIVE</code> or
+<code>INACTIVE</code>, or a small set of categories) as an index
+partition key, a massive number of items map to the exact same partition
+key value. This leads to:</p>
+<ul>
+<li><strong>Hot Partitioning:</strong> DynamoDB allocates throughput per
+partition (up to 1,000 write capacity units and 3,000 read capacity
+units per physical partition). If thousands of read requests target the
+same non-unique key simultaneously, the partition saturates, resulting
+in <code>ProvisionedThroughputExceededException</code> errors.</li>
+<li><strong>Imbalanced Storage:</strong> Asymmetric data growth forces
+DynamoDB to split partitions unevenly, which dilutes the provisioned
+throughput across partitions and increases the likelihood of read
+throttling.</li>
+</ul>
+<h3 id="result-set-sizes-and-pagination-latency">Result Set Sizes and
+Pagination Latency</h3>
+<p>A single DynamoDB <code>Query</code> operation retrieves a maximum of
+1 MB of data in a single round-trip. When querying an index with a
+non-unique partition key that matches tens of thousands of items:</p>
+<ul>
+<li><strong>Multiple Network Round-Trips:</strong> The application must
+paginate through the results using the <code>LastEvaluatedKey</code>.
+Even if you limit the returned items in application logic, DynamoDB must
+still fetch the records from storage, causing increased end-to-end
+latency.</li>
+<li><strong>Higher Read Capacity Unit (RCU) Consumption:</strong>
+Reading large result sets consumes substantial RCUs, raising
+infrastructure costs and temporarily depleting bucket capacities for
+other concurrent requests.</li>
+</ul>
+<h3 id="the-role-of-sort-keys-in-query-efficiency">The Role of Sort Keys
+in Query Efficiency</h3>
+<p>To preserve high performance when indexing non-unique attributes,
+pairing the non-unique partition key with a high-cardinality sort key is
+critical.</p>
+<ul>
+<li><strong>Range Key Filtering:</strong> A selective sort key (such as
+a UUID, timestamp, or composite string like <code>region#date</code>)
+allows the <code>Query</code> API to use key condition expressions
+(<code>begins_with</code>, <code>between</code>, <code>&lt;</code>,
+<code>&gt;</code>).</li>
+<li><strong>Narrowed Traversal:</strong> Instead of scanning the entire
+partition space associated with the non-unique key, the storage engine
+jumps directly to the matching boundary, drastically cutting execution
+time and consumed RCUs.</li>
+</ul>
+<h3 id="write-amplification-and-index-overhead">Write Amplification and
+Index Overhead</h3>
+<p>Indexing non-unique attributes impacts write performance as well as
+query execution:</p>
+<ul>
+<li><strong>Asynchronous Replication Overhead:</strong> Every time an
+item is created, updated, or deleted in the base table, DynamoDB
+asynchronously updates the GSI. If the indexed attribute is updated
+frequently, write volume multiplies across indexes.</li>
+<li><strong>Backpressure and Throttling:</strong> If a GSI's non-unique
+partition is throttled due to high write concurrency, it can introduce
+backpressure, potentially slowing or throttling write operations on the
+primary table itself.</li>
+</ul>
+<h3 id="strategies-to-optimize-non-unique-indexes">Strategies to
+Optimize Non-Unique Indexes</h3>
+<p>To prevent performance degradation when indexing non-unique
+fields:</p>
+<ol type="1">
+<li><strong>Write Sharding (Key Salting):</strong> Append a random or
+calculated suffix (e.g., <code>status_1</code>, <code>status_2</code>)
+to the non-unique partition key to spread reads and writes across
+multiple physical partitions.</li>
+<li><strong>Composite Keys:</strong> Combine low-cardinality attributes
+with higher-cardinality values before indexing (e.g., combining
+<code>status</code> and <code>tenant_id</code> into
+<code>ACTIVE#12345</code>).</li>
+<li><strong>Sparse Indexes:</strong> Populate the non-unique attribute
+only on items that need to be queried. Items lacking the indexed
+attribute are excluded from the index entirely, keeping index partitions
+small, performant, and cost-effective.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/indexing-non-unique-attributes-in-dynamo-db';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

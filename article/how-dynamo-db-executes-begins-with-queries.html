@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Executes begins_with Queries - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB executes prefix searches using the beginswith function by leveraging the physical ordering of items within a partition. When applied to a sort key in a Query operation, beginswith uses an internal B-tree index to locate the lower bound of">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-begins-with-queries">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Executes begins_with Queries - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-begins-with-queries" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB executes prefix searches using the beginswith function by leveraging the physical ordering of items within a partition. When applied to a sort key in a Query operation, beginswith uses an internal B-tree index to locate the lower bound of" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-executes-begins_with-queries">How DynamoDB Executes
+begins_with Queries</h1>
+<p>Amazon DynamoDB executes prefix searches using the
+<code>begins_with</code> function by leveraging the physical ordering of
+items within a partition. When applied to a sort key in a
+<code>Query</code> operation, <code>begins_with</code> uses an internal
+B-tree index to locate the lower bound of the prefix and sequentially
+read contiguous items until the prefix condition is no longer met. This
+article details the internal mechanics of prefix searches in DynamoDB,
+contrasts key condition execution with filter expressions, and explains
+how this impacts read performance and capacity consumption.</p>
+<h2 id="internal-storage-and-sort-key-architecture">Internal Storage and
+Sort Key Architecture</h2>
+<p>To understand how <code>begins_with</code> executes, you must
+understand how DynamoDB stores data across partitions:</p>
+<ol type="1">
+<li><strong>Partition Key Routing:</strong> DynamoDB hashes the
+partition key (hash key) to determine the exact storage node and
+partition where the data resides.</li>
+<li><strong>Physical Ordering by Sort Key:</strong> Within that
+partition, all items sharing the same partition key are stored
+physically together. They are ordered strictly by their sort key (range
+key) values using raw UTF-8 binary encoding.</li>
+<li><strong>Local Indexing:</strong> Storage nodes maintain localized
+index structures (typically B-trees or similar balanced search trees)
+over the sort keys of each partition.</li>
+</ol>
+<p>Because items inside a partition are pre-sorted, prefix matching does
+not require scanning the entire partition.</p>
+<h2 id="query-execution-in-a-keyconditionexpression">Query Execution in
+a KeyConditionExpression</h2>
+<p>When you use <code>begins_with</code> inside a
+<code>KeyConditionExpression</code>, the DynamoDB storage engine
+executes the operation as a bounded range scan:</p>
+<ol type="1">
+<li><strong>Binary Search to the Start Boundary:</strong> DynamoDB
+traverses the local index to find the first item whose sort key is equal
+to or greater than the specified prefix.</li>
+<li><strong>Sequential Read:</strong> The storage engine reads items
+sequentially forward from that point. Because strings sharing the same
+prefix are grouped together contiguously in UTF-8 order, matching items
+are adjacent on disk.</li>
+<li><strong>Termination at the End Boundary:</strong> DynamoDB stops
+reading immediately upon encountering the first sort key that does not
+begin with the target prefix.</li>
+</ol>
+<p>Because the data is contiguous, disk I/O is minimized. Only the pages
+containing the matching records are accessed.</p>
+<h3 id="read-capacity-unit-rcu-calculation">Read Capacity Unit (RCU)
+Calculation</h3>
+<p>When <code>begins_with</code> is used in a
+<code>KeyConditionExpression</code>, DynamoDB charges only for the items
+that match the condition. The total size of the matching items is
+aggregated, rounded up to the nearest 4 KB boundary, and billed
+accordingly. Items outside the prefix range are never read from disk or
+processed.</p>
+<h2
+id="begins_with-in-filterexpressions-vs-keyconditionexpressions">begins_with
+in FilterExpressions vs. KeyConditionExpressions</h2>
+<p>The <code>begins_with</code> function behaves fundamentally
+differently depending on where it appears in your request:</p>
+<ul>
+<li><strong>KeyConditionExpression (Fast and Cost-Efficient):</strong>
+Restricted strictly to the sort key. It leverages physical storage
+layout to fetch only the relevant subset of data, terminating as soon as
+the prefix boundary ends.</li>
+<li><strong>FilterExpression (Slow and Expensive):</strong> Applied to
+non-key attributes or evaluated after a primary key condition. In this
+scenario, DynamoDB reads all candidate items up to 1 MB into memory,
+consumes RCUs for the entire dataset evaluated, and only then applies
+the <code>begins_with</code> check to strip out non-matching records
+before returning the payload.</li>
+</ul>
+<h2 id="utf-8-binary-collation-mechanics">UTF-8 Binary Collation
+Mechanics</h2>
+<p>DynamoDB does not use language-specific collation rules; it evaluates
+<code>begins_with</code> using strict UTF-8 binary byte order.</p>
+<ul>
+<li><strong>Case Sensitivity:</strong> Uppercase characters (ASCII
+values 65–90) sort before lowercase characters (ASCII values 97–122). A
+query for <code>begins_with(sk, "app")</code> will not match
+<code>Apple</code>.</li>
+<li><strong>Delimiter Alignment:</strong> Common delimiters such as
+<code>#</code>, <code>/</code>, or <code>:</code> have specific ASCII
+values (<code>#</code> is 35, <code>/</code> is 47, <code>:</code> is
+58). This deterministic ordering allows developers to design
+hierarchical sort keys (e.g., <code>REGION#COUNTRY#STATE</code>) where
+<code>begins_with(sk, "REGION#USA#")</code> reliably captures all child
+data without edge-case overlaps.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-begins-with-queries';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

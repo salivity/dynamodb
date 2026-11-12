@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prevent DynamoDB Duplicates With attribute_not_exists - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB natively performs upsert operations, meaning a standard write command will overwrite an existing item if it shares the same primary key. To enforce data uniqueness and prevent duplicate records, developers use DynamoDB conditional writes p">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/prevent-dynamo-db-duplicates-with-attribute-not-exists">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Prevent DynamoDB Duplicates With attribute_not_exists - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/prevent-dynamo-db-duplicates-with-attribute-not-exists" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB natively performs upsert operations, meaning a standard write command will overwrite an existing item if it shares the same primary key. To enforce data uniqueness and prevent duplicate records, developers use DynamoDB conditional writes p" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="prevent-dynamodb-duplicates-with-attribute_not_exists">Prevent
+DynamoDB Duplicates With attribute_not_exists</h1>
+<p>Amazon DynamoDB natively performs upsert operations, meaning a
+standard write command will overwrite an existing item if it shares the
+same primary key. To enforce data uniqueness and prevent duplicate
+records, developers use DynamoDB conditional writes powered by the
+<code>attribute_not_exists</code> function. This article explains how
+this function evaluates item keys before writing, how it triggers
+exceptions to halt unintended overwrites, and the best practices for
+implementing it effectively in distributed environments.</p>
+<h3 id="the-default-overwrite-behavior">The Default Overwrite
+Behavior</h3>
+<p>In DynamoDB, the <code>PutItem</code> operation is non-idempotent
+regarding data state: if an item with the specified partition key (and
+sort key, if applicable) already exists, DynamoDB replaces the entire
+item with the new data. This default behavior frequently causes
+accidental duplicates or data loss in workflows where records should
+only be created once, such as user registrations, payment
+authorizations, or order processing.</p>
+<h3 id="how-attribute_not_exists-enforces-uniqueness">How
+attribute_not_exists Enforces Uniqueness</h3>
+<p>The <code>attribute_not_exists</code> function acts as a conditional
+check evaluated on the server side immediately before a write operation
+executes. By pointing this function at the item's primary key attribute,
+DynamoDB guarantees atomic validation:</p>
+<pre class="text"><code>ConditionExpression = &quot;attribute_not_exists(id)&quot;</code></pre>
+<p>When this condition is attached to a <code>PutItem</code> request,
+DynamoDB performs the following steps:</p>
+<ol type="1">
+<li><strong>Target Identification:</strong> DynamoDB locates the
+partition where the target primary key belongs.</li>
+<li><strong>Evaluation:</strong> The engine checks whether the specified
+attribute (e.g., <code>id</code>) exists on an item with that primary
+key.</li>
+<li><strong>Execution or Rejection:</strong>
+<ul>
+<li>If the attribute does <strong>not</strong> exist (the item is
+entirely new), DynamoDB commits the write.</li>
+<li>If the attribute <strong>does</strong> exist (a record with that key
+already exists), the write fails immediately.</li>
+</ul></li>
+</ol>
+<p>Because this evaluation happens atomically inside the DynamoDB
+engine, it avoids race conditions (check-then-act bugs) without
+requiring distributed locks.</p>
+<h3 id="handling-conditionalcheckfailedexception">Handling
+ConditionalCheckFailedException</h3>
+<p>When <code>attribute_not_exists</code> evaluates to false, DynamoDB
+rejects the write request and returns a
+<code>ConditionalCheckFailedException</code> (HTTP status code 400).</p>
+<p>Application logic should catch this specific exception to handle
+duplicates appropriately:</p>
+<ul>
+<li><strong>Idempotent APIs:</strong> If an identical request is sent
+twice (e.g., network retry), the exception confirms the record was
+already created, allowing the application to safely return a success or
+cached response instead of failing.</li>
+<li><strong>Conflict Resolution:</strong> For entity creation (such as a
+unique username), catching the exception allows the application to
+notify the client that the identifier is already taken.</li>
+<li><strong>Cost Efficiency:</strong> A rejected conditional write still
+consumes Write Capacity Units (WCUs) because DynamoDB reads and
+evaluates the record, but it prevents downstream inconsistency.</li>
+</ul>
+<h3 id="composite-primary-key-considerations">Composite Primary Key
+Considerations</h3>
+<p>For tables using a composite primary key (a Partition Key and a Sort
+Key), <code>attribute_not_exists</code> must be applied to the Sort
+Key:</p>
+<pre class="text"><code>ConditionExpression = &quot;attribute_not_exists(sort_key_name)&quot;</code></pre>
+<p>Checking the partition key alone is insufficient on a composite table
+because multiple items can share the same partition key as long as their
+sort keys differ. Targeting the sort key ensures the specific
+partition-and-sort combination does not already exist.</p>
+<h3 id="scope-and-limitations">Scope and Limitations</h3>
+<p>The <code>attribute_not_exists</code> function only enforces
+uniqueness across primary key attributes. It cannot prevent duplicates
+across non-key attributes directly. If a non-key attribute (such as an
+email address) must remain globally unique while using a different
+primary key (such as a generated <code>user_id</code>), standard
+secondary indexes cannot enforce this constraint. In such scenarios,
+developers must use DynamoDB Transactions
+(<code>TransactWriteItems</code>) to write a secondary "lock" or mapping
+item alongside the primary item to ensure uniqueness.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/prevent-dynamo-db-duplicates-with-attribute-not-exists';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

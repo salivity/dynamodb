@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Transactions Guarantee ACID Compliance - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides native, fully managed support for multi-item, cross-table operations that require strict database guarantees through its transaction APIs. By utilizing TransactWriteItems and TransactGetItems, developers can coordinate up to 100 o">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-transactions-guarantee-acid-compliance">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Transactions Guarantee ACID Compliance - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-transactions-guarantee-acid-compliance" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides native, fully managed support for multi-item, cross-table operations that require strict database guarantees through its transaction APIs. By utilizing TransactWriteItems and TransactGetItems, developers can coordinate up to 100 o" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-transactions-guarantee-acid-compliance">How
+DynamoDB Transactions Guarantee ACID Compliance</h1>
+<p>Amazon DynamoDB provides native, fully managed support for
+multi-item, cross-table operations that require strict database
+guarantees through its transaction APIs. By utilizing
+<code>TransactWriteItems</code> and <code>TransactGetItems</code>,
+developers can coordinate up to 100 operations or 4 MB of data in a
+single transactional request. This overview explains the specific
+mechanisms DynamoDB uses to ensure Atomicity, Consistency, Isolation,
+and Durability (ACID) across multiple items and tables without requiring
+complex custom locking logic.</p>
+<h3 id="the-underlying-architecture-managed-two-phase-commits">The
+Underlying Architecture: Managed Two-Phase Commits</h3>
+<p>To enforce ACID compliance across distributed storage nodes, DynamoDB
+uses an internal, highly optimized two-phase commit (2PC) protocol
+managed by transaction coordinators.</p>
+<p>When a transaction request arrives:</p>
+<ol type="1">
+<li><strong>Coordination:</strong> A coordinator node is assigned to
+orchestrate the transaction.</li>
+<li><strong>Phase 1 (Prepare):</strong> The coordinator validates
+permissions, checks pre-conditions, and acquires reservations (locks) on
+the targeted items across their respective storage partitions.</li>
+<li><strong>Phase 2 (Commit):</strong> If all condition checks pass and
+no conflicts occur, the coordinator instructs the partitions to apply
+the changes simultaneously. If any single check fails or an item is
+locked by a competing transaction, the coordinator cancels the operation
+and releases all reservations.</li>
+</ol>
+<h3 id="how-dynamodb-enforces-each-acid-property">How DynamoDB Enforces
+Each ACID Property</h3>
+<h4 id="1-atomicity">1. Atomicity</h4>
+<p>Atomicity dictates that a set of operations must either entirely
+succeed or entirely fail. DynamoDB enforces this through an
+"all-or-nothing" execution model:</p>
+<ul>
+<li>If any condition check in a <code>TransactWriteItems</code> call
+evaluates to false, the entire transaction is rejected.</li>
+<li>DynamoDB returns a <code>TransactionCanceledException</code>,
+indicating precisely which item caused the failure.</li>
+<li>No partial updates are ever written to the database; the state
+remains unchanged as if the operation never occurred.</li>
+</ul>
+<h4 id="2-consistency">2. Consistency</h4>
+<p>DynamoDB transactions maintain system-wide consistency before and
+after execution:</p>
+<ul>
+<li><strong>Prerequisite Validation:</strong> Developers can attach
+condition expressions (such as verifying an account balance or checking
+item existence) to individual operations within the transaction.</li>
+<li><strong>Global Secondary Indexes (GSIs):</strong> While transaction
+writes are applied synchronously to base tables, updates to GSIs are
+updated asynchronously. However, the base table data remains strictly
+consistent across all replicas immediately upon transaction
+completion.</li>
+</ul>
+<h4 id="3-isolation">3. Isolation</h4>
+<p>DynamoDB provides serializable isolation, the highest isolation level
+defined by SQL standards:</p>
+<ul>
+<li>Transactions are executed such that their concurrent execution
+produces the same state as if they were executed sequentially.</li>
+<li>Read operations within <code>TransactGetItems</code> or writes
+within <code>TransactWriteItems</code> do not experience dirty reads,
+non-repeatable reads, or phantom reads.</li>
+<li>Read-only transactions are isolated from simultaneous write
+transactions, ensuring the client receives a point-in-time snapshot of
+the requested items.</li>
+</ul>
+<h4 id="4-durability">4. Durability</h4>
+<p>Durability guarantees that once a transaction completes, its updates
+persist even in the event of hardware or system failures:</p>
+<ul>
+<li>DynamoDB stores items redundantly across multiple Availability Zones
+(AZs) within an AWS Region.</li>
+<li>A transaction is acknowledged as successful to the client only after
+the updates have been committed to persistent storage across a quorum of
+storage nodes.</li>
+</ul>
+<h3 id="preventing-duplicate-executions-with-idempotency">Preventing
+Duplicate Executions with Idempotency</h3>
+<p>Network timeouts can obscure whether a transaction succeeded.
+DynamoDB solves this by allowing clients to include a
+<code>ClientRequestToken</code> with any <code>TransactWriteItems</code>
+call.</p>
+<p>If the client retries the exact same transaction with the same token
+within a 10-minute window, DynamoDB recognizes the operation as
+idempotent. It returns the success status of the initial execution
+without re-applying the operations, preventing unintentional
+double-writes or duplicate charges.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-transactions-guarantee-acid-compliance';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

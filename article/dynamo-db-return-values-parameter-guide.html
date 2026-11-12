@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB ReturnValues Parameter Guide - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, the ReturnValues parameter controls what item attributes the service returns in its response after executing a write operation. By default, write requests return empty responses to conserve bandwidth. Configuring ReturnValues allows de">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-return-values-parameter-guide">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB ReturnValues Parameter Guide - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-return-values-parameter-guide" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, the ReturnValues parameter controls what item attributes the service returns in its response after executing a write operation. By default, write requests return empty responses to conserve bandwidth. Configuring ReturnValues allows de" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-returnvalues-parameter-guide">DynamoDB ReturnValues
+Parameter Guide</h1>
+<p>In Amazon DynamoDB, the <code>ReturnValues</code> parameter controls
+what item attributes the service returns in its response after executing
+a write operation. By default, write requests return empty responses to
+conserve bandwidth. Configuring <code>ReturnValues</code> allows
+developers to inspect an item's previous or newly modified state
+directly within the response of a <code>PutItem</code>,
+<code>UpdateItem</code>, or <code>DeleteItem</code> call, eliminating
+the need to issue a separate <code>GetItem</code> request.</p>
+<h3 id="primary-purposes-of-returnvalues">Primary Purposes of
+ReturnValues</h3>
+<ol type="1">
+<li><strong>Eliminate Extra Read Requests:</strong> Instead of issuing a
+write followed by a read to verify data changes,
+<code>ReturnValues</code> provides the required item attributes within
+the write operation's response. This reduces network round-trips and
+overall application latency.</li>
+<li><strong>Retrieve Values from Atomic Updates:</strong> When
+performing mathematical operations (such as incrementing a counter using
+<code>ADD</code> in an <code>UpdateItem</code> expression), the
+application often needs to know the final value.
+<code>ReturnValues</code> supplies the resulting value immediately.</li>
+<li><strong>Capture State Changes for Concurrency Control:</strong> When
+items are updated or deleted conditionally, accessing the pre-existing
+state helps applications track changes, log audit trails, or resolve
+conflicts without additional lookups.</li>
+</ol>
+<h3 id="supported-options-by-operation">Supported Options by
+Operation</h3>
+<p>The behavior of <code>ReturnValues</code> depends on the specific
+write operation being executed.</p>
+<h4 id="for-updateitem">For <code>UpdateItem</code></h4>
+<p><code>UpdateItem</code> offers the most flexibility, supporting five
+distinct values:</p>
+<ul>
+<li><strong><code>NONE</code> (Default):</strong> DynamoDB returns
+nothing in the response.</li>
+<li><strong><code>ALL_OLD</code>:</strong> Returns all attributes of the
+item as they existed immediately prior to the update.</li>
+<li><strong><code>ALL_NEW</code>:</strong> Returns all attributes of the
+item as they exist immediately after the update.</li>
+<li><strong><code>UPDATED_OLD</code>:</strong> Returns only the specific
+attributes that were changed, showing their values as they existed
+before the update.</li>
+<li><strong><code>UPDATED_NEW</code>:</strong> Returns only the specific
+attributes that were changed, showing their values as they exist after
+the update.</li>
+</ul>
+<h4 id="for-putitem-and-deleteitem">For <code>PutItem</code> and
+<code>DeleteItem</code></h4>
+<p><code>PutItem</code> and <code>DeleteItem</code> operate on whole
+items rather than partial updates, so they support fewer options:</p>
+<ul>
+<li><strong><code>NONE</code> (Default):</strong> DynamoDB returns
+nothing in the response.</li>
+<li><strong><code>ALL_OLD</code>:</strong> Returns all attributes of the
+item as they existed prior to being overwritten by <code>PutItem</code>
+or removed by <code>DeleteItem</code>.</li>
+</ul>
+<p><em>Note: <code>ALL_NEW</code>, <code>UPDATED_OLD</code>, and
+<code>UPDATED_NEW</code> are not valid for <code>PutItem</code> or
+<code>DeleteItem</code>.</em></p>
+<h3 id="throughput-and-cost-impact">Throughput and Cost Impact</h3>
+<p>Requesting attributes via <code>ReturnValues</code> does not consume
+additional Read Capacity Units (RCUs). The operation is billed solely as
+a write operation based on the item's size. However, returning large
+payloads increases response payload size and network bandwidth
+consumption, so <code>ReturnValues</code> should only be configured when
+the client application actively requires the returned data.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-return-values-parameter-guide';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

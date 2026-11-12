@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Reverse DynamoDB Query Sort Order - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB retrieves items in ascending order by default based on the table or index sort key. This article covers how to invert that default behavior using the dedicated query parameter, explains how it functions under the hood, and highlights key c">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-to-reverse-dynamo-db-query-sort-order">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How to Reverse DynamoDB Query Sort Order - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-to-reverse-dynamo-db-query-sort-order" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB retrieves items in ascending order by default based on the table or index sort key. This article covers how to invert that default behavior using the dedicated query parameter, explains how it functions under the hood, and highlights key c" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-to-reverse-dynamodb-query-sort-order">How to Reverse
+DynamoDB Query Sort Order</h1>
+<p>Amazon DynamoDB retrieves items in ascending order by default based
+on the table or index sort key. This article covers how to invert that
+default behavior using the dedicated query parameter, explains how it
+functions under the hood, and highlights key considerations regarding
+pagination and result limits.</p>
+<h3 id="the-scanindexforward-parameter">The
+<code>ScanIndexForward</code> Parameter</h3>
+<p>In Amazon DynamoDB, the parameter used to reverse the search order
+along the sort key is
+<strong><code>ScanIndexForward</code></strong>.</p>
+<p><code>ScanIndexForward</code> is a boolean parameter available
+exclusively in <code>Query</code> operations:</p>
+<ul>
+<li><strong><code>true</code> (Default):</strong> DynamoDB reads items
+in ascending order based on the sort key (e.g., 0 to 9, A to Z, or
+oldest to newest timestamps).</li>
+<li><strong><code>false</code>:</strong> DynamoDB reads items in
+descending order based on the sort key (e.g., 9 to 0, Z to A, or newest
+to oldest timestamps).</li>
+</ul>
+<h3 id="how-it-works">How It Works</h3>
+<p>A <code>Query</code> operation requires an exact match on a partition
+key and allows sorting and filtering based on the sort key. When
+<code>ScanIndexForward</code> is set to <code>false</code>, DynamoDB
+starts traversing the partition from the highest sort key value and
+moves downward toward the lowest value.</p>
+<p>This behavior applies equally to queries executed against the base
+table, Local Secondary Indexes (LSIs), and Global Secondary Indexes
+(GSIs).</p>
+<h3 id="usage-example">Usage Example</h3>
+<p>In the AWS SDK (such as the AWS SDK for JavaScript/Node.js or
+Python/Boto3), the parameter is passed directly into the query input
+object:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;TableName&quot;</span><span class="fu">:</span> <span class="st">&quot;UserOrders&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;KeyConditionExpression&quot;</span><span class="fu">:</span> <span class="st">&quot;UserId = :uid&quot;</span><span class="fu">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ExpressionAttributeValues&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;:uid&quot;</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">&quot;S&quot;</span><span class="fu">:</span> <span class="st">&quot;user_123&quot;</span> <span class="fu">}</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;ScanIndexForward&quot;</span><span class="fu">:</span> <span class="kw">false</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="impact-on-pagination-and-the-limit-parameter">Impact on
+Pagination and the <code>Limit</code> Parameter</h3>
+<p>Setting <code>ScanIndexForward</code> to <code>false</code> directly
+impacts how DynamoDB applies the <code>Limit</code> parameter:</p>
+<ol type="1">
+<li><strong>Top-N Results:</strong> If you specify a <code>Limit</code>
+of 5 and set <code>ScanIndexForward</code> to <code>false</code>,
+DynamoDB returns the 5 items with the highest sort key values within
+that partition. This makes it an ideal pattern for retrieving the "most
+recent" records.</li>
+<li><strong>Pagination:</strong> When using pagination with
+<code>ExclusiveStartKey</code>, the query will continue scanning in
+descending order from the specified starting key rather than moving
+forward.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-to-reverse-dynamo-db-query-sort-order';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

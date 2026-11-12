@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Fine-Grained Access Control with AWS IAM - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB integrates with AWS Identity and Access Management (IAM) to enforce fine-grained access control (FGAC), allowing organizations to control security at the individual item and attribute levels rather than granting blanket table access. This">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-fine-grained-access-control-with-aws-iam">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Fine-Grained Access Control with AWS IAM - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-fine-grained-access-control-with-aws-iam" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB integrates with AWS Identity and Access Management (IAM) to enforce fine-grained access control (FGAC), allowing organizations to control security at the individual item and attribute levels rather than granting blanket table access. This" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-fine-grained-access-control-with-aws-iam">DynamoDB
+Fine-Grained Access Control with AWS IAM</h1>
+<p>Amazon DynamoDB integrates with AWS Identity and Access Management
+(IAM) to enforce fine-grained access control (FGAC), allowing
+organizations to control security at the individual item and attribute
+levels rather than granting blanket table access. This article explains
+how DynamoDB uses IAM policy condition keys to restrict access to
+specific records based on user identity, limit visibility to individual
+attributes, and integrate with federated identity providers for secure
+multi-tenant architectures.</p>
+<h2 id="the-role-of-iam-condition-keys-in-dynamodb">The Role of IAM
+Condition Keys in DynamoDB</h2>
+<p>Standard IAM policies grant permissions at the API action level (such
+as <code>dynamodb:GetItem</code> or <code>dynamodb:PutItem</code>) and
+resource level (the table or index ARN). Fine-grained access control
+extends this by evaluating the <code>Condition</code> block in an IAM
+policy. When an application or user requests access to a table, DynamoDB
+evaluates the parameters of the request against the conditions declared
+in the IAM policy to determine whether the operation is authorized.</p>
+<p>DynamoDB provides specific context keys designed for item- and
+attribute-level enforcement:</p>
+<ul>
+<li><code>dynamodb:LeadingKeys</code>: Controls access to items based on
+their partition key value.</li>
+<li><code>dynamodb:Attributes</code>: Restricts which attributes
+(columns) a user can read or write.</li>
+<li><code>dynamodb:Select</code>: Controls the projection type allowed
+in query or scan operations (e.g.,
+<code>SPECIFIC_ATTRIBUTES</code>).</li>
+</ul>
+<h2 id="item-level-access-control">Item-Level Access Control</h2>
+<p>Item-level security prevents users from accessing items that do not
+belong to them. It is commonly implemented using the
+<code>dynamodb:LeadingKeys</code> condition key, which matches the
+partition key value of the target item against an attribute of the
+requesting identity.</p>
+<p>For example, when using Web Identity Federation or Amazon Cognito, an
+application receives an identity token containing a unique user ID
+(<code>${cognito-identity.amazonaws.com:sub}</code>). By embedding this
+variable in the IAM policy's <code>dynamodb:LeadingKeys</code>
+condition, DynamoDB ensures the caller can only read, write, or update
+items where the partition key matches their unique identifier.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Version&quot;</span><span class="fu">:</span> <span class="st">&quot;2012-10-17&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Statement&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Effect&quot;</span><span class="fu">:</span> <span class="st">&quot;Allow&quot;</span><span class="fu">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Action&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:GetItem&quot;</span><span class="ot">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:PutItem&quot;</span><span class="ot">,</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:UpdateItem&quot;</span><span class="ot">,</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:DeleteItem&quot;</span><span class="ot">,</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;dynamodb:Query&quot;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Resource&quot;</span><span class="fu">:</span> <span class="st">&quot;arn:aws:dynamodb:us-east-1:123456789012:table/UserProfiles&quot;</span><span class="fu">,</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Condition&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&quot;ForAllValues:StringEquals&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;dynamodb:LeadingKeys&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>            <span class="st">&quot;${cognito-identity.amazonaws.com:sub}&quot;</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>          <span class="ot">]</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h2 id="attribute-level-access-control">Attribute-Level Access
+Control</h2>
+<p>Attribute-level control dictates which fields within an item can be
+viewed or modified. This is useful for protecting sensitive data, such
+as Personally Identifiable Information (PII) or internal administrative
+flags, while still permitting general access to the rest of the
+record.</p>
+<p>Attribute access is managed using the
+<code>dynamodb:Attributes</code> key alongside permission modifiers:</p>
+<ul>
+<li><strong>Read Restrictions:</strong> To limit read operations,
+policies enforce that queries or gets must request only authorized
+attributes. The policy must also require <code>dynamodb:Select</code> to
+be set to <code>SPECIFIC_ATTRIBUTES</code> to prevent wildcards from
+returning unauthorized data.</li>
+<li><strong>Write Restrictions:</strong> For write operations, the
+policy restricts the attributes that can be passed in
+<code>PutItem</code> or <code>UpdateItem</code> requests, preventing
+unauthorized users from modifying privileged fields like
+<code>isAdmin</code> or <code>accountBalance</code>.</li>
+</ul>
+<h2 id="identity-federation-and-multi-tenancy">Identity Federation and
+Multi-Tenancy</h2>
+<p>In modern mobile, web, and SaaS architectures, fine-grained access
+control removes the need for intermediate backend authentication layers
+to broker database queries. By combining DynamoDB IAM policies with
+identity federation:</p>
+<ol type="1">
+<li>A user authenticates through an OpenID Connect (OIDC) or SAML
+provider (e.g., Google, Amazon Cognito, Okta).</li>
+<li>AWS Security Token Service (STS) issues temporary AWS credentials
+linked to an IAM role.</li>
+<li>The IAM role contains policy conditions tied to session tags or
+identity provider claims (such as a <code>tenant_id</code> or
+<code>user_id</code>).</li>
+<li>DynamoDB validates these session variables against the target
+partition key on every request, isolating tenant or user data natively
+at the database layer.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-fine-grained-access-control-with-aws-iam';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

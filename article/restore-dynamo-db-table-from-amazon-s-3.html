@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restore DynamoDB Table From Amazon S3 - dynamodb</title>
+    <meta name="description" content="Restoring data from an Amazon Simple Storage Service (S3) bucket back into Amazon DynamoDB is accomplished through DynamoDB&#39;s native &quot;Import from S3&quot; feature. This article explains the architectural process DynamoDB uses to ingest data files from S3, crea">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/restore-dynamo-db-table-from-amazon-s-3">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Restore DynamoDB Table From Amazon S3 - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/restore-dynamo-db-table-from-amazon-s-3" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Restoring data from an Amazon Simple Storage Service (S3) bucket back into Amazon DynamoDB is accomplished through DynamoDB&#39;s native &quot;Import from S3&quot; feature. This article explains the architectural process DynamoDB uses to ingest data files from S3, crea" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="restore-dynamodb-table-from-amazon-s3">Restore DynamoDB Table
+From Amazon S3</h1>
+<p>Restoring data from an Amazon Simple Storage Service (S3) bucket back
+into Amazon DynamoDB is accomplished through DynamoDB's native "Import
+from S3" feature. This article explains the architectural process
+DynamoDB uses to ingest data files from S3, create a target table, parse
+records without consuming write capacity, and handle errors during bulk
+ingestion.</p>
+<h3 id="target-table-creation">Target Table Creation</h3>
+<p>The restore process requires creating a brand-new DynamoDB table; it
+cannot import data directly into an existing table. When an import job
+is initiated via the AWS Management Console, AWS CLI, or the
+<code>ImportTable</code> API, you define the target table configuration,
+including:</p>
+<ul>
+<li>Primary key schema (Partition Key and optional Sort Key).</li>
+<li>Billing mode (Provisioned or On-Demand).</li>
+<li>Secondary indexes (Local Secondary Indexes and Global Secondary
+Indexes).</li>
+<li>Encryption settings (AWS owned key, AWS managed key, or customer
+managed KMS key).</li>
+</ul>
+<p>DynamoDB initializes the table in an <code>IMPORTING</code> state,
+making it unavailable for read and write operations until the
+restoration completes.</p>
+<h3 id="supported-data-formats-and-compression">Supported Data Formats
+and Compression</h3>
+<p>DynamoDB supports source data stored in Amazon S3 in three
+formats:</p>
+<ol type="1">
+<li><strong>DynamoDB JSON:</strong> Standard JSON formatted with
+DynamoDB data type descriptors (e.g., <code>{"S": "value"}</code>).</li>
+<li><strong>Amazon Ion:</strong> A superset of JSON developed by Amazon
+that provides rich data typing.</li>
+<li><strong>CSV:</strong> Delimited text files, where headers define the
+attribute names.</li>
+</ol>
+<p>Source files can be uncompressed or compressed using GZIP or ZSTD
+algorithms. DynamoDB automatically detects compression and processes
+individual or multiple objects matching the designated S3 bucket
+prefix.</p>
+<h3 id="serverless-parallel-ingestion">Serverless Parallel
+Ingestion</h3>
+<p>Once the job starts, DynamoDB manages the ingestion entirely behind
+the scenes using internal distributed compute resources:</p>
+<ul>
+<li><strong>No Capacity Consumption:</strong> The import does not
+consume the table's provisioned Write Capacity Units (WCUs) or incur
+On-Demand write charges. It is billed separately based on the
+uncompressed size of the source data processed.</li>
+<li><strong>Parallel Processing:</strong> DynamoDB scales internal
+worker instances to read, decompress, and parse S3 objects
+concurrently.</li>
+<li><strong>Direct Storage Ingestion:</strong> The parsed records are
+loaded directly into the underlying storage nodes allocated for the new
+table partitions.</li>
+</ul>
+<h3 id="error-handling-and-verification">Error Handling and
+Verification</h3>
+<p>During the import, DynamoDB validates the source data against the
+defined schema and standard DynamoDB constraints (such as item size
+limits of 400 KB and primary key uniqueness).</p>
+<ul>
+<li>If an item violates schema constraints (for example, missing a
+partition key or containing invalid formatting), it is rejected.</li>
+<li>DynamoDB generates detailed error logs and writes them back to your
+S3 bucket under an error prefix, documenting the specific line or record
+that failed.</li>
+<li>You can monitor the status and metrics—such as imported items,
+processed bytes, and error counts—through CloudWatch and the DynamoDB
+console.</li>
+</ul>
+<h3 id="finalizing-table-availability">Finalizing Table
+Availability</h3>
+<p>After all valid items from the S3 source are written to the storage
+nodes, DynamoDB generates any configured Global Secondary Indexes
+(GSIs). Once index backfilling completes, the table transitions from the
+<code>IMPORTING</code> status to <code>ACTIVE</code>. At this point, the
+restored table is fully functional and ready to accept live application
+reads and writes.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/restore-dynamo-db-table-from-amazon-s-3';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

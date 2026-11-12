@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Manages Multi-Master Replication - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Global Tables provide a fully managed, active-active multi-region database solution that allows applications to read and write locally to DynamoDB tables across multiple AWS regions. This article breaks down the internal mechanics of Dynam">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-multi-master-replication">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Manages Multi-Master Replication - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-multi-master-replication" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Global Tables provide a fully managed, active-active multi-region database solution that allows applications to read and write locally to DynamoDB tables across multiple AWS regions. This article breaks down the internal mechanics of Dynam" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-manages-multi-master-replication">How DynamoDB
+Manages Multi-Master Replication</h1>
+<p>Amazon DynamoDB Global Tables provide a fully managed, active-active
+multi-region database solution that allows applications to read and
+write locally to DynamoDB tables across multiple AWS regions. This
+article breaks down the internal mechanics of DynamoDB's multi-master
+replication, focusing on its asynchronous update pipeline, the
+Last-Writer-Wins conflict resolution strategy, data consistency models,
+and how write amplification and replication loops are prevented.</p>
+<h3 id="active-active-multi-region-architecture">Active-Active
+Multi-Region Architecture</h3>
+<p>DynamoDB Global Tables function as a collection of identical replica
+tables distributed across different AWS regions. Unlike traditional
+active-passive systems where writes must route to a single primary node,
+every replica in a Global Table is an active master capable of accepting
+both read and write requests independently.</p>
+<p>When a write (such as <code>PutItem</code>, <code>UpdateItem</code>,
+or <code>DeleteItem</code>) is performed against a replica table, the
+operation is committed locally first. The application receives a success
+acknowledgment as soon as the local write meets standard regional
+durability requirements across three availability zones within that
+local region.</p>
+<h3 id="the-asynchronous-replication-engine">The Asynchronous
+Replication Engine</h3>
+<p>Once a local write commits, DynamoDB automatically replicates the
+change to all other participating regions in the global table:</p>
+<ol type="1">
+<li><strong>Change Tracking:</strong> The regional storage engine
+detects the change via an internal continuous data-capture mechanism
+similar to DynamoDB Streams.</li>
+<li><strong>Transport:</strong> The update payload is serialized and
+securely transmitted across the dedicated AWS global network backbone
+directly to the target regions.</li>
+<li><strong>Application:</strong> The receiving replica consumes the
+stream event and applies the modification locally.</li>
+</ol>
+<p>This replication happens asynchronously in the background, typically
+completing in under one second under standard operational conditions.
+Because it is asynchronous, cross-region network latency does not
+degrade local application write performance.</p>
+<h3 id="conflict-resolution-last-writer-wins-lww">Conflict Resolution:
+Last-Writer-Wins (LWW)</h3>
+<p>Because any region can accept writes simultaneously, concurrent
+writes to the same item in different regions can create update
+conflicts. DynamoDB resolves these conflicts using a deterministic
+<strong>Last-Writer-Wins (LWW)</strong> strategy:</p>
+<ul>
+<li><strong>Internal Timestamps:</strong> Every write operation is
+tagged with a high-resolution, internal system timestamp (synchronized
+via timekeeping services across AWS data centers).</li>
+<li><strong>Comparison:</strong> When an incoming replication update
+targets an item that was also modified locally or by another replica,
+DynamoDB compares the timestamps of the conflicting updates.</li>
+<li><strong>Resolution:</strong> The update with the most recent
+timestamp is persisted, and the older update is discarded. If timestamps
+are identical, DynamoDB applies an internal tie-breaker based on
+operational metadata to ensure deterministic convergence across all
+regions.</li>
+</ul>
+<p>Because conflict resolution operates at the entire item level rather
+than the attribute level, a newer write overwrites the entire item state
+evaluated by the older write.</p>
+<h3 id="replication-loop-prevention">Replication Loop Prevention</h3>
+<p>To prevent infinite replication loops—where Region A replicates an
+update to Region B, and Region B attempts to replicate it back to Region
+A—DynamoDB embeds metadata into each replication event. This metadata
+identifies the originating region of the write and tracks the item's
+replication lineage. When a replica applies an update from another
+region, it does not re-emit that update as a new local write event to
+the replication pipeline.</p>
+<h3 id="read-consistency-and-transactions">Read Consistency and
+Transactions</h3>
+<p>Multi-master replication impacts how data consistency is achieved
+across regions:</p>
+<ul>
+<li><strong>Local Reads:</strong> Applications reading from a local
+replica can choose between <strong>Eventual Consistency</strong> or
+<strong>Strong Consistency</strong> for data written within that
+specific region.</li>
+<li><strong>Cross-Region Reads:</strong> Reads across regions are always
+<strong>Eventually Consistent</strong>. There is a brief replication lag
+window during which a read in one region may return stale data before a
+remote write arrives.</li>
+<li><strong>Transactions:</strong> DynamoDB transactions
+(<code>TransactWriteItems</code>) provide ACID guarantees strictly
+within the local region where the transaction executes. Once committed
+locally, the transactional changes are replicated to remote regions as
+individual, idempotent item updates.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-multi-master-replication';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

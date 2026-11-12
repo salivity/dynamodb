@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Data Compression for Large Text - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB does not natively or automatically compress large text attributes on the server side prior to writing them to storage. To reduce item sizes, developers must implement client-side compression before sending payloads to DynamoDB, transformin">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-data-compression-for-large-text">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Data Compression for Large Text - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-data-compression-for-large-text" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB does not natively or automatically compress large text attributes on the server side prior to writing them to storage. To reduce item sizes, developers must implement client-side compression before sending payloads to DynamoDB, transformin" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-data-compression-for-large-text">DynamoDB Data
+Compression for Large Text</h1>
+<p>Amazon DynamoDB does not natively or automatically compress large
+text attributes on the server side prior to writing them to storage. To
+reduce item sizes, developers must implement client-side compression
+before sending payloads to DynamoDB, transforming compressed text into
+binary attributes. This approach avoids exceeding DynamoDB's strict item
+size limits, lowers read and write capacity unit consumption, and
+reduces overall infrastructure costs.</p>
+<h3 id="the-400-kb-limit-and-server-side-handling">The 400 KB Limit and
+Server-Side Handling</h3>
+<p>DynamoDB imposes a strict maximum limit of 400 KB per individual
+item, which includes both the attribute names and values. When writing a
+large string attribute (<code>S</code>), DynamoDB stores the raw,
+uncompressed UTF-8 bytes. Because the database does not evaluate or
+alter the content of attributes during write operations, attempting to
+write an uncompressed string that pushes the total item size beyond 400
+KB results in an <code>ItemSizeLimitExceededException</code>.</p>
+<h3 id="implementing-client-side-compression">Implementing Client-Side
+Compression</h3>
+<p>Because server-side compression is unavailable, compression must take
+place within the application layer before calling DynamoDB APIs such as
+<code>PutItem</code> or <code>UpdateItem</code>.</p>
+<ol type="1">
+<li><strong>Compression:</strong> The application takes the raw string
+and compresses it using an algorithm suited to the workload, such as
+Gstandard (zstd), GZIP, Snappy, or Deflate. Gstandard and Snappy are
+popular choices due to their low CPU overhead and high compression
+speeds.</li>
+<li><strong>Data Type Mapping:</strong> Once compressed, the data is
+converted from a standard text string to raw bytes. In DynamoDB, this
+data must be stored using the Binary attribute type (<code>B</code>)
+instead of the String type (<code>S</code>).</li>
+<li><strong>Retrieval and Decompression:</strong> When the application
+reads the item using <code>GetItem</code> or <code>Query</code>, it
+retrieves the binary attribute, runs it through the decompression
+algorithm, and reconstructs the original string.</li>
+</ol>
+<h3 id="performance-and-cost-implications">Performance and Cost
+Implications</h3>
+<p>Compressing text attributes before writing offers distinct
+advantages, but introduces specific architectural trade-offs:</p>
+<ul>
+<li><strong>Capacity Unit Savings:</strong> DynamoDB measures read and
+write throughput in terms of capacity units. One Write Capacity Unit
+(WCU) covers a write up to 1 KB, and one Read Capacity Unit (RCU) covers
+a strongly consistent read up to 4 KB. Compressing a 30 KB text blob
+down to 5 KB reduces the write cost from 30 WCUs to 5 WCUs.</li>
+<li><strong>Loss of Query Capabilities:</strong> Storing data as a
+binary blob removes the ability to use DynamoDB filter expressions, key
+condition expressions, or functions like <code>contains()</code> or
+<code>begins_with()</code> on the text content. The text becomes opaque
+to DynamoDB.</li>
+<li><strong>Client CPU Overhead:</strong> Shifting compression to the
+client consumes additional CPU and memory resources on the application
+servers during serialization and deserialization.</li>
+</ul>
+<h3 id="handling-extreme-payloads-the-s3-pattern">Handling Extreme
+Payloads (The S3 Pattern)</h3>
+<p>If text attributes remain near or above the 400 KB limit even after
+client-side compression, the standard architectural pattern is to store
+the compressed text object in Amazon S3. The application then stores
+only the resulting S3 object key or URL as a string attribute inside the
+DynamoDB item, bypassing the 400 KB item constraint entirely.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-data-compression-for-large-text';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

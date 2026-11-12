@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Maintains High-Throughput Streaming - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB maintains high-throughput streaming with minimal latency by decoupling its stream processing from core database operations, sharding streams across distributed storage nodes, and utilizing an append-only log architecture. By aligning strea">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-maintains-high-throughput-streaming">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Maintains High-Throughput Streaming - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-maintains-high-throughput-streaming" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB maintains high-throughput streaming with minimal latency by decoupling its stream processing from core database operations, sharding streams across distributed storage nodes, and utilizing an append-only log architecture. By aligning strea" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-maintains-high-throughput-streaming">How DynamoDB
+Maintains High-Throughput Streaming</h1>
+<p>Amazon DynamoDB maintains high-throughput streaming with minimal
+latency by decoupling its stream processing from core database
+operations, sharding streams across distributed storage nodes, and
+utilizing an append-only log architecture. By aligning stream shards
+directly with physical database partitions and serving stream reads from
+isolated replication pipelines, DynamoDB ensures that massive write
+volumes are captured and emitted within milliseconds without degrading
+primary database performance.</p>
+<h3 id="architectural-decoupling-from-the-storage-engine">Architectural
+Decoupling from the Storage Engine</h3>
+<p>DynamoDB does not use database triggers or synchronous hooks to
+generate stream records. Instead, it relies on internal write-ahead log
+(WAL) replication. When a write request is committed across a quorum of
+storage nodes (replicas), the mutation is simultaneously appended to an
+internal, non-blocking log stream. Because stream extraction occurs
+asynchronously at the storage layer rather than at the request-routing
+layer, streaming does not consume primary table Read Capacity Units
+(RCUs) or Write Capacity Units (WCUs), nor does it add latency to the
+client's write path.</p>
+<h3 id="horizontal-scaling-via-sharding">Horizontal Scaling via
+Sharding</h3>
+<p>To handle unpredictable traffic spikes and scale beyond the limits of
+a single machine, DynamoDB Streams automatically mirrors the horizontal
+partition scheme of the underlying table:</p>
+<ul>
+<li><strong>One-to-One Partition Mapping:</strong> Table partitions map
+directly to one or more stream shards. When a table partition splits due
+to data volume or throughput saturation, the corresponding stream shard
+is closed, and child shards are created to absorb the new
+throughput.</li>
+<li><strong>Independent Concurrency:</strong> Each shard operates as an
+autonomous, ordered sequence of records. Because consumption can occur
+concurrently across hundreds or thousands of shards, total stream
+throughput scales linearly with the size and activity of the table.</li>
+</ul>
+<h3
+id="strict-partition-level-ordering-without-global-bottlenecks">Strict
+Partition-Level Ordering Without Global Bottlenecks</h3>
+<p>Global transaction ordering across distributed systems introduces
+severe synchronization latency. DynamoDB avoids this bottleneck by
+guaranteeing strict ordering only at the item level. Changes made to a
+specific item (identified by its partition key) are routed to the exact
+same shard and delivered in chronological order. By scoping ordering
+guarantees to the shard level, DynamoDB processes millions of distinct
+keys in parallel across the fleet without requiring cross-node consensus
+for consumer reads.</p>
+<h3 id="pull-based-read-optimization-and-resource-isolation">Pull-Based
+Read Optimization and Resource Isolation</h3>
+<p>DynamoDB Streams provides dedicated read endpoints optimized for
+continuous polling. When consumers query shards using the
+<code>GetRecords</code> API:</p>
+<ul>
+<li><strong>Dedicated Ephemeral Storage:</strong> Stream data is stored
+separately from primary table B-trees in an optimized, sequential-read
+log format retained for 24 hours.</li>
+<li><strong>Low-Latency Polling:</strong> Consumers poll shards using
+long-polling mechanisms, retrieving batches of up to 1,000 records.
+Because the read operations hit memory-buffered append logs rather than
+indexing structures, record retrieval latency typically remains under
+200 milliseconds.</li>
+</ul>
+<h3 id="native-integration-with-kinesis-data-streams">Native Integration
+with Kinesis Data Streams</h3>
+<p>For workloads requiring longer retention, multi-region aggregation,
+or fan-out capabilities to multiple concurrent applications, DynamoDB
+allows direct streaming to Amazon Kinesis Data Streams. This integration
+leverages the same internal replication pipeline to push mutations
+directly to Kinesis shards without custom ingest code, allowing users to
+leverage enhanced fan-out (HTTP/2 push-based delivery) to reduce
+consumer-side latency down to under 70 milliseconds across up to 20
+parallel consumers.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-maintains-high-throughput-streaming';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

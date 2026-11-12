@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Limit Parameter: Restrict Returned Items - dynamodb</title>
+    <meta name="description" content="In Amazon DynamoDB, the Limit parameter is used to restrict the maximum number of items processed and returned by read operations such as Query and Scan. This article explains how the Limit parameter works, highlights crucial behavior differences when usi">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-limit-parameter-restrict-returned-items">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Limit Parameter: Restrict Returned Items - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-limit-parameter-restrict-returned-items" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="In Amazon DynamoDB, the Limit parameter is used to restrict the maximum number of items processed and returned by read operations such as Query and Scan. This article explains how the Limit parameter works, highlights crucial behavior differences when usi" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-limit-parameter-restrict-returned-items">DynamoDB Limit
+Parameter: Restrict Returned Items</h1>
+<p>In Amazon DynamoDB, the <code>Limit</code> parameter is used to
+restrict the maximum number of items processed and returned by read
+operations such as <code>Query</code> and <code>Scan</code>. This
+article explains how the <code>Limit</code> parameter works, highlights
+crucial behavior differences when using filter expressions, and covers
+how to handle pagination to retrieve subsequent sets of results
+efficiently.</p>
+<h3 id="the-limit-parameter">The <code>Limit</code> Parameter</h3>
+<p>When invoking the <code>Query</code> or <code>Scan</code> API
+operations in Amazon DynamoDB, you can specify the <code>Limit</code>
+parameter as a positive integer. This parameter tells DynamoDB the
+maximum number of items to evaluate before returning the response.</p>
+<p>For example, setting <code>"Limit": 10</code> requests that DynamoDB
+evaluate up to 10 items matching the primary key criteria before
+returning the result.</p>
+<h3 id="interaction-with-filter-expressions">Interaction with Filter
+Expressions</h3>
+<p>A common point of confusion is how <code>Limit</code> interacts with
+a <code>FilterExpression</code>:</p>
+<ul>
+<li>DynamoDB applies the <code>Limit</code> <strong>before</strong>
+evaluating any <code>FilterExpression</code>.</li>
+<li>If you set a <code>Limit</code> of 10 and include a
+<code>FilterExpression</code>, DynamoDB reads up to 10 items that meet
+your key condition, applies the filter to those 10 items, and returns
+only the ones that match.</li>
+<li>Consequently, the response may contain fewer items than the
+specified <code>Limit</code>, or even zero items, even if more matching
+items exist later in the table or partition.</li>
+</ul>
+<h3 id="handling-pagination-with-lastevaluatedkey">Handling Pagination
+with <code>LastEvaluatedKey</code></h3>
+<p>If the number of evaluated items reaches the value set by
+<code>Limit</code>, or if the result reaches DynamoDB's hard 1 MB
+payload size limit, DynamoDB stops processing and includes a
+<code>LastEvaluatedKey</code> element in the response.</p>
+<p>To retrieve the next page of results:</p>
+<ol type="1">
+<li>Check the response for the presence of
+<code>LastEvaluatedKey</code>.</li>
+<li>Send a new <code>Query</code> or <code>Scan</code> request.</li>
+<li>Pass the returned <code>LastEvaluatedKey</code> into the
+<code>ExclusiveStartKey</code> parameter of the new request.</li>
+<li>Repeat this process until <code>LastEvaluatedKey</code> is empty or
+no longer returned.</li>
+</ol>
+<h3 id="the-1-mb-size-limit">The 1 MB Size Limit</h3>
+<p>Regardless of the value assigned to <code>Limit</code>, DynamoDB
+enforces an automatic 1 MB limit on the total data evaluated in a single
+operation. If DynamoDB hits the 1 MB threshold before reaching your
+configured <code>Limit</code>, it immediately halts execution, returns
+the data read so far, and supplies a <code>LastEvaluatedKey</code> to
+continue reading.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-limit-parameter-restrict-returned-items';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

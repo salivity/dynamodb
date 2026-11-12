@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Encryption with AWS KMS Customer Keys - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB integrates natively with AWS Key Management Service (AWS KMS) to provide robust, transparent encryption at rest using Customer Managed Keys (CMKs). This article explains how DynamoDB utilizes AWS KMS customer keys to manage encryption life">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-encryption-with-aws-kms-customer-keys">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Encryption with AWS KMS Customer Keys - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-encryption-with-aws-kms-customer-keys" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB integrates natively with AWS Key Management Service (AWS KMS) to provide robust, transparent encryption at rest using Customer Managed Keys (CMKs). This article explains how DynamoDB utilizes AWS KMS customer keys to manage encryption life" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-encryption-with-aws-kms-customer-keys">DynamoDB
+Encryption with AWS KMS Customer Keys</h1>
+<p>Amazon DynamoDB integrates natively with AWS Key Management Service
+(AWS KMS) to provide robust, transparent encryption at rest using
+Customer Managed Keys (CMKs). This article explains how DynamoDB
+utilizes AWS KMS customer keys to manage encryption lifecycles, enforce
+granular access controls, and execute envelope encryption to secure
+table data, local and global secondary indexes, streams, and backups
+without degrading database performance.</p>
+<h3 id="customer-managed-keys-vs-aws-managed-keys">Customer Managed Keys
+vs. AWS Managed Keys</h3>
+<p>When configuring encryption at rest in DynamoDB, you can choose
+between an AWS owned key, an AWS managed key, or a Customer Managed Key
+(CMK). A CMK gives you full ownership over the encryption key's
+lifecycle. With a customer key, you define and manage:</p>
+<ul>
+<li><strong>Key Policies:</strong> Define who can administer or use the
+key through IAM policies and KMS key policies.</li>
+<li><strong>Key Rotation:</strong> Enable automatic annual rotation or
+manually create and rotate to new key material.</li>
+<li><strong>Auditing:</strong> Monitor every cryptographic request and
+administrative action through AWS CloudTrail logs.</li>
+<li><strong>Cryptographic Operations:</strong> Enable, disable, or
+delete keys instantly to revoke access to DynamoDB tables.</li>
+</ul>
+<h3 id="envelope-encryption-mechanism">Envelope Encryption
+Mechanism</h3>
+<p>DynamoDB uses an envelope encryption strategy with AWS KMS to
+optimize performance and prevent KMS API rate-limiting. Rather than
+sending every database read and write request to AWS KMS, the process
+operates as follows:</p>
+<ol type="1">
+<li><strong>Requesting a Data Key:</strong> When a DynamoDB table
+encrypted with a CMK is created or loaded, DynamoDB sends a
+<code>kms:GenerateDataKey</code> request to AWS KMS, referencing your
+specified KMS Key ARN.</li>
+<li><strong>Generating the Key Pair:</strong> AWS KMS generates a unique
+Data Encryption Key (DEK). It returns two versions to DynamoDB: a
+plaintext copy and an encrypted copy (cipherblob) encrypted under your
+root KMS CMK.</li>
+<li><strong>Encrypting Table Data:</strong> DynamoDB uses the plaintext
+DEK in memory with an industry-standard algorithm (AES-256) to encrypt
+user data before writing it to storage media (solid-state drives).</li>
+<li><strong>Storing the Encrypted Key:</strong> DynamoDB stores the
+encrypted version of the DEK alongside the table metadata. The plaintext
+DEK is securely purged from memory as soon as it is no longer actively
+needed.</li>
+<li><strong>Decrypting Data:</strong> When reading data after a cache
+expiration or system restart, DynamoDB submits the encrypted DEK back to
+AWS KMS via a <code>kms:Decrypt</code> call. Once KMS returns the
+plaintext key, DynamoDB decrypts the table blocks.</li>
+</ol>
+<h3 id="data-key-caching-and-performance">Data Key Caching and
+Performance</h3>
+<p>Directly invoking AWS KMS for every read or write would introduce
+latency and rapidly exhaust KMS request quotas. To prevent this,
+DynamoDB caches the plaintext data keys in memory within an isolated
+security boundary.</p>
+<p>Cached keys are tied to the table's security context and are retained
+temporarily for ongoing transactions. They are periodically discarded
+and refreshed, forcing re-authentication and re-authorization against
+the KMS key policy.</p>
+<h3 id="aws-kms-grants-and-permissions">AWS KMS Grants and
+Permissions</h3>
+<p>DynamoDB interacts with your customer key using AWS KMS Grants. A
+grant is an advanced permission mechanism that allows DynamoDB to use
+your KMS key programmatically on your behalf without requiring permanent
+alterations to your KMS key policies.</p>
+<p>To establish this:</p>
+<ul>
+<li>The principal creating or updating the DynamoDB table must have
+permissions for <code>kms:CreateGrant</code>,
+<code>kms:DescribeKey</code>, and cryptographic operations
+(<code>kms:Encrypt</code>, <code>kms:Decrypt</code>,
+<code>kms:GenerateDataKey*</code>).</li>
+<li>DynamoDB creates a grant specifically for the table, allowing its
+internal service principals to call KMS APIs to generate and decrypt the
+table's data keys.</li>
+<li>If you revoke the grant or modify the KMS key policy to deny the
+service principal, DynamoDB loses access to decrypt the data keys,
+rendering the table inaccessible once memory caches expire.</li>
+</ul>
+<h3 id="key-lifecycle-events-and-impact-on-dynamodb">Key Lifecycle
+Events and Impact on DynamoDB</h3>
+<p>Managing a customer key directly impacts the availability of the
+associated DynamoDB resources:</p>
+<ul>
+<li><strong>Key Rotation:</strong> When automatic key rotation is
+enabled, AWS KMS generates new key material annually. Existing data keys
+remain decryptable using the previous key material, while newly
+generated data keys use the updated key material. DynamoDB handles this
+transition seamlessly without requiring table re-encryption.</li>
+<li><strong>Disabling or Revoking Keys:</strong> If you disable or
+delete a CMK in KMS, DynamoDB can no longer decrypt data keys. As active
+cached keys expire (typically within minutes), all subsequent read and
+write requests to the table fail with an error indicating the key is
+unavailable.</li>
+<li><strong>Audit Trails:</strong> Every operation—from initial grant
+creation to individual <code>GenerateDataKey</code> and
+<code>Decrypt</code> calls—is recorded in AWS CloudTrail, providing an
+immutable audit log of when and how DynamoDB accessed your encryption
+keys.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-encryption-with-aws-kms-customer-keys';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Filter Expressions and Read Capacity Usage - dynamodb</title>
+    <meta name="description" content="This article examines how DynamoDB filter expressions impact Read Capacity Unit (RCU) consumption during Query and Scan operations. While filter expressions are effective for reducing network payload sizes and client-side processing, they do not decrease">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-filter-expressions-and-read-capacity-usage">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Filter Expressions and Read Capacity Usage - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-filter-expressions-and-read-capacity-usage" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article examines how DynamoDB filter expressions impact Read Capacity Unit (RCU) consumption during Query and Scan operations. While filter expressions are effective for reducing network payload sizes and client-side processing, they do not decrease" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-filter-expressions-and-read-capacity-usage">DynamoDB
+Filter Expressions and Read Capacity Usage</h1>
+<p>This article examines how DynamoDB filter expressions impact Read
+Capacity Unit (RCU) consumption during Query and Scan operations. While
+filter expressions are effective for reducing network payload sizes and
+client-side processing, they do not decrease the number of RCUs consumed
+by a request. Understanding this distinction is essential for optimizing
+Amazon DynamoDB architecture, predicting operational costs, and
+designing efficient table schemas.</p>
+<h3 id="how-dynamodb-processes-read-operations">How DynamoDB Processes
+Read Operations</h3>
+<p>When executing a <code>Query</code> or <code>Scan</code> operation
+with a <code>FilterExpression</code>, DynamoDB performs the request in
+two sequential stages:</p>
+<ol type="1">
+<li><strong>Read Stage:</strong> DynamoDB identifies and reads the items
+from storage based on the request parameters. For a <code>Query</code>,
+it reads all items matching the <code>KeyConditionExpression</code>. For
+a <code>Scan</code>, it reads all items within the scanned partition
+space or segment up to the specified limit (or 1 MB max).</li>
+<li><strong>Filter Stage:</strong> DynamoDB applies the
+<code>FilterExpression</code> to the items retrieved in the read stage.
+Items that do not match the filter criteria are discarded before the
+final response is returned to the client.</li>
+</ol>
+<p>Because read capacity measurement occurs during the first stage, the
+filtering logic has zero impact on the volume of data initially read
+from disk.</p>
+<h3 id="the-direct-impact-on-read-capacity-units-rcus">The Direct Impact
+on Read Capacity Units (RCUs)</h3>
+<p>DynamoDB calculates consumed RCUs based on the total size of all
+items evaluated before applying the <code>FilterExpression</code>.</p>
+<ul>
+<li><strong>Strongly Consistent Reads:</strong> 1 RCU per 4 KB of data
+evaluated.</li>
+<li><strong>Eventually Consistent Reads:</strong> 0.5 RCU per 4 KB of
+data evaluated.</li>
+<li><strong>Transactional Reads:</strong> 2 RCUs per 4 KB of data
+evaluated.</li>
+</ul>
+<p>For example, if a <code>Query</code> operation matches 100 items
+totaling 400 KB via the partition and sort keys, DynamoDB reads all 400
+KB into memory. If a <code>FilterExpression</code> subsequently excludes
+99 of those items, the client receives only a single 4 KB item. Despite
+the tiny response payload, DynamoDB charges for the full 400 KB
+evaluated, consuming 50 eventually consistent RCUs (or 100 strongly
+consistent RCUs).</p>
+<h3 id="the-1-mb-limit-constraint">The 1 MB Limit Constraint</h3>
+<p>DynamoDB limits individual read operations to a maximum of 1 MB of
+evaluated data per request. Because the <code>FilterExpression</code> is
+applied after this 1 MB boundary is read, an operation can return an
+empty result set while still consuming full read capacity and returning
+a pagination token (<code>LastEvaluatedKey</code>). Applications must
+handle pagination to evaluate subsequent items, further accumulating RCU
+costs.</p>
+<h3 id="benefits-of-filter-expressions">Benefits of Filter
+Expressions</h3>
+<p>Although they do not reduce database-level read costs, filter
+expressions provide several distinct architectural advantages:</p>
+<ul>
+<li><strong>Reduced Network Latency and Bandwidth:</strong> By
+discarding unwanted attributes or items on the server side, DynamoDB
+transfers significantly smaller payloads over the wire to your
+application.</li>
+<li><strong>Lower Client-Side Compute:</strong> Applications do not need
+to spend CPU cycles or memory filtering large arrays of objects in
+code.</li>
+<li><strong>Simplified Application Logic:</strong> Developers can write
+cleaner client code without implementing custom filtering routines.</li>
+</ul>
+<h3 id="best-practices-to-actually-reduce-rcus">Best Practices to
+Actually Reduce RCUs</h3>
+<p>To lower read capacity usage and associated AWS costs, filtering must
+occur before data retrieval:</p>
+<ul>
+<li><strong>Optimize Partition and Sort Keys:</strong> Design sort keys
+that allow narrow ranges using operators like <code>begins_with</code>,
+<code>between</code>, and relational comparisons directly in the
+<code>KeyConditionExpression</code>.</li>
+<li><strong>Implement Global Secondary Indexes (GSIs):</strong> Create
+targeted GSIs with alternative partition and sort keys that isolate the
+exact items you need to query.</li>
+<li><strong>Use Sparse Indexes:</strong> Project only the items
+containing specific attributes into a GSI. If an item lacks the GSI's
+key attributes, it is not written to the index, effectively
+pre-filtering the dataset at zero query-time read penalty.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-filter-expressions-and-read-capacity-usage';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

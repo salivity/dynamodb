@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restricting DynamoDB Access via VPC Endpoints - dynamodb</title>
+    <meta name="description" content="Restricting Amazon DynamoDB API calls to private networks is a fundamental practice for securing sensitive cloud workloads. This article details the primary security controls used to restrict DynamoDB access to specific Virtual Private Clouds (VPCs). It f">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/restricting-dynamo-db-access-via-vpc-endpoints">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Restricting DynamoDB Access via VPC Endpoints - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/restricting-dynamo-db-access-via-vpc-endpoints" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Restricting Amazon DynamoDB API calls to private networks is a fundamental practice for securing sensitive cloud workloads. This article details the primary security controls used to restrict DynamoDB access to specific Virtual Private Clouds (VPCs). It f" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="restricting-dynamodb-access-via-vpc-endpoints">Restricting
+DynamoDB Access via VPC Endpoints</h1>
+<p>Restricting Amazon DynamoDB API calls to private networks is a
+fundamental practice for securing sensitive cloud workloads. This
+article details the primary security controls used to restrict DynamoDB
+access to specific Virtual Private Clouds (VPCs). It focuses on VPC
+endpoint policies and AWS Identity and Access Management (IAM) condition
+keys, explaining how these mechanisms work in tandem to prevent
+unauthorized data access and limit traffic strictly to designated
+endpoints.</p>
+<h2 id="the-primary-control-vpc-endpoint-policies">The Primary Control:
+VPC Endpoint Policies</h2>
+<p>The core security control that restricts DynamoDB access at the
+network boundary is the <strong>VPC Endpoint Policy</strong>.</p>
+<p>DynamoDB uses a Gateway VPC Endpoint to allow instances within a
+private subnet to communicate with DynamoDB without crossing the public
+internet. By default, a DynamoDB VPC endpoint allows full access
+(<code>*</code>) to all DynamoDB actions and resources. However, you can
+attach an endpoint policy directly to the VPC endpoint to restrict this
+traffic.</p>
+<p>An endpoint policy is a JSON-based resource policy that
+determines:</p>
+<ul>
+<li><strong>Principals:</strong> Which IAM users, roles, or AWS accounts
+can send requests through the endpoint.</li>
+<li><strong>Actions:</strong> Which DynamoDB API operations (such as
+<code>dynamodb:GetItem</code> or <code>dynamodb:PutItem</code>) are
+permitted.</li>
+<li><strong>Resources:</strong> Which specific DynamoDB table Amazon
+Resource Names (ARNs) can be accessed.</li>
+</ul>
+<p>By scoping down the endpoint policy, you ensure that even if an
+identity has administrative DynamoDB permissions in IAM, it cannot use
+that specific VPC endpoint to interact with unauthorized tables or
+perform restricted actions.</p>
+<h2 id="enforcing-vpc-origin-with-iam-condition-keys">Enforcing VPC
+Origin with IAM Condition Keys</h2>
+<p>While an endpoint policy dictates what traffic can pass <em>out</em>
+of a VPC to DynamoDB, the complementary control that enforces access
+<em>only</em> through a VPC endpoint is the <strong>IAM Policy Condition
+Key</strong>.</p>
+<p>To guarantee that requests to a DynamoDB table originate solely from
+a specific VPC endpoint, administrators must use the
+<code>aws:sourceVpce</code> condition key within IAM policies or
+DynamoDB resource-based policies.</p>
+<h3 id="how-awssourcevpce-works">How <code>aws:sourceVpce</code>
+Works</h3>
+<p>By adding a condition block with <code>aws:sourceVpce</code>, you can
+explicitly deny or restrict DynamoDB API calls unless the request passes
+through the designated VPC endpoint ID (e.g.,
+<code>vpce-1a2b3c4d</code>).</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Version&quot;</span><span class="fu">:</span> <span class="st">&quot;2012-10-17&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;Statement&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Sid&quot;</span><span class="fu">:</span> <span class="st">&quot;RestrictDynamoDBToVpce&quot;</span><span class="fu">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Effect&quot;</span><span class="fu">:</span> <span class="st">&quot;Deny&quot;</span><span class="fu">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Principal&quot;</span><span class="fu">:</span> <span class="st">&quot;*&quot;</span><span class="fu">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Action&quot;</span><span class="fu">:</span> <span class="st">&quot;dynamodb:*&quot;</span><span class="fu">,</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Resource&quot;</span><span class="fu">:</span> <span class="st">&quot;arn:aws:dynamodb:region:account-id:table/MySecureTable&quot;</span><span class="fu">,</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;Condition&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&quot;StringNotEquals&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;aws:sourceVpce&quot;</span><span class="fu">:</span> <span class="st">&quot;vpce-1a2b3c4d&quot;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>      <span class="fu">}</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p>Alternatively, the <code>aws:sourceVpc</code> condition key can be
+used to restrict calls to an entire VPC ID rather than a specific
+endpoint ID, though <code>aws:sourceVpce</code> provides more granular
+control.</p>
+<h2 id="combining-controls-for-defense-in-depth">Combining Controls for
+Defense-in-Depth</h2>
+<p>Achieving comprehensive security requires using both controls
+simultaneously:</p>
+<ol type="1">
+<li><strong>VPC Endpoint Policies</strong> prevent data exfiltration by
+ensuring that workloads inside the VPC can only reach authorized
+DynamoDB tables.</li>
+<li><strong>IAM Policies with <code>aws:sourceVpce</code></strong>
+prevent unauthorized access from external networks by ensuring that the
+targeted DynamoDB table rejects any API call that does not originate
+from the approved VPC endpoint.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/restricting-dynamo-db-access-via-vpc-endpoints';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

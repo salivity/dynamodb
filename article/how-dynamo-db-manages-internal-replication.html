@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Manages Internal Replication - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB ensures high availability, durability, and fault tolerance by automatically dividing data into partitions and replicating those partitions across multiple storage nodes. Within the storage architecture, each partition is represented as a r">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-internal-replication">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Manages Internal Replication - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-internal-replication" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB ensures high availability, durability, and fault tolerance by automatically dividing data into partitions and replicating those partitions across multiple storage nodes. Within the storage architecture, each partition is represented as a r" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-manages-internal-replication">How DynamoDB Manages
+Internal Replication</h1>
+<p>Amazon DynamoDB ensures high availability, durability, and fault
+tolerance by automatically dividing data into partitions and replicating
+those partitions across multiple storage nodes. Within the storage
+architecture, each partition is represented as a replica group
+consisting of a primary (leader) node and multiple secondary (follower)
+storage nodes. This article explains how DynamoDB coordinates these
+nodes using consensus algorithms, enforces write quorums through
+write-ahead logging, and manages node failures and state synchronization
+without downtime.</p>
+<h3 id="partition-replicas-and-the-storage-group">Partition Replicas and
+the Storage Group</h3>
+<p>DynamoDB distributes table data into physical partitions based on
+partition key hashes. To prevent single points of failure, every
+partition does not reside on a single machine; instead, it is deployed
+as a replication group consisting of multiple storage nodes (typically a
+three-way replica set).</p>
+<p>Within each replica set, one node functions as the primary or leader,
+while the remaining nodes act as secondaries or peers. The primary node
+is responsible for sequencing all incoming write operations and
+coordinating state across the group, while secondary nodes maintain
+synchronized copies of the partition's data.</p>
+<h3 id="leader-election-via-paxos">Leader Election via Paxos</h3>
+<p>To manage leadership and prevent split-brain scenarios, DynamoDB
+utilizes the Paxos consensus algorithm. The nodes within a partition
+group communicate continuously using heartbeats to monitor health and
+reach consensus on cluster state.</p>
+<p>If the active primary node crashes, fails a health check, or becomes
+network-isolated, the remaining secondary nodes detect the failure and
+initiate a new leader election round using Paxos. A candidate node must
+secure a majority vote from the replica set to become the new primary.
+This transition typically completes in milliseconds, ensuring minimal
+disruption to incoming traffic.</p>
+<h3 id="the-synchronous-write-path-and-quorum">The Synchronous Write
+Path and Quorum</h3>
+<p>When a write request (such as <code>PutItem</code>,
+<code>UpdateItem</code>, or <code>DeleteItem</code>) reaches a DynamoDB
+Request Router, it is directed to the primary storage node for that
+specific partition. The primary executes the following replication
+workflow:</p>
+<ol type="1">
+<li><strong>Transaction Generation:</strong> The primary assigns an
+monotonically increasing transaction sequence number to the
+operation.</li>
+<li><strong>Local Logging:</strong> The primary appends the update to
+its local write-ahead log (WAL).</li>
+<li><strong>Replication Broadcast:</strong> The primary concurrently
+sends the log entry to all secondary storage nodes in the group.</li>
+<li><strong>Quorum Acknowledgment:</strong> Each secondary persists the
+update to its own local write-ahead log and sends an acknowledgment
+(ACK) back to the primary.</li>
+<li><strong>Commit:</strong> Once the primary receives an ACK from a
+quorum (a strict majority, such as 2 out of 3 nodes, including the
+primary itself), the write is committed.</li>
+<li><strong>Client Response:</strong> The primary reports success back
+to the request router, which then returns a 200 OK to the client.</li>
+</ol>
+<p>Because commits only require a majority rather than unanimous
+agreement, the storage group can tolerate the slowness or failure of a
+secondary node without delaying write latency.</p>
+<h3 id="asynchronous-catch-up-and-anti-entropy">Asynchronous Catch-Up
+and Anti-Entropy</h3>
+<p>The secondary node that did not acknowledge the write during the
+critical path does not remain outdated permanently. DynamoDB handles
+catch-up through asynchronous log streaming and anti-entropy background
+processes:</p>
+<ul>
+<li><strong>Log Streaming:</strong> The lagging secondary continuously
+pulls missing log records from the primary or peer secondaries as soon
+as its connection stabilizes.</li>
+<li><strong>Anti-Entropy Verification:</strong> DynamoDB employs
+background verification processes that cross-reference Merkle trees
+(hash trees) across replicas. If discrepancies or corrupted segments are
+detected, the system transfers the specific missing data blocks from
+healthy peers to repair the out-of-sync node.</li>
+<li><strong>Node Replacement:</strong> If a storage node fails
+permanently or suffers prolonged disconnection, the DynamoDB partition
+management service provisions a new, healthy node, adds it to the
+replica set, and streams a snapshot of the partition's current state
+followed by recent transaction logs.</li>
+</ul>
+<h3 id="read-consistency-mechanics">Read Consistency Mechanics</h3>
+<p>The primary-secondary replication structure directly dictates how
+DynamoDB services read operations:</p>
+<ul>
+<li><strong>Strongly Consistent Reads:</strong> The request router
+routes the query strictly to the current primary node. Because the
+primary coordinates all writes and holds the authoritative quorum state,
+it guarantees the most recent version of the item.</li>
+<li><strong>Eventually Consistent Reads:</strong> The request router can
+dispatch the query to any replica—primary or secondary. If the request
+hits a secondary node that has not yet processed the latest log entries,
+the response may reflect a slightly stale state until the node finishes
+catching up.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-internal-replication';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>When to Use an LSI Over a GSI in DynamoDB - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB provides Local Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs) to enable query access patterns beyond a table&#39;s primary key design. While GSIs are generally preferred for their flexibility, developers should select an LSI when">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/when-to-use-an-lsi-over-a-gsi-in-dynamo-db">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="When to Use an LSI Over a GSI in DynamoDB - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/when-to-use-an-lsi-over-a-gsi-in-dynamo-db" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB provides Local Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs) to enable query access patterns beyond a table&#39;s primary key design. While GSIs are generally preferred for their flexibility, developers should select an LSI when" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="when-to-use-an-lsi-over-a-gsi-in-dynamodb">When to Use an LSI
+Over a GSI in DynamoDB</h1>
+<p>Amazon DynamoDB provides Local Secondary Indexes (LSIs) and Global
+Secondary Indexes (GSIs) to enable query access patterns beyond a
+table's primary key design. While GSIs are generally preferred for their
+flexibility, developers should select an LSI when they need strongly
+consistent reads, want to utilize the base table’s throughput capacity
+without paying for separate index capacity, and are querying data that
+shares the same partition key as the base table. This article outlines
+the specific architectural scenarios and trade-offs where choosing an
+LSI over a GSI is the optimal engineering decision.</p>
+<h2 id="1-requirement-for-strongly-consistent-reads">1. Requirement for
+Strongly Consistent Reads</h2>
+<p>The primary technical differentiator of an LSI is read
+consistency.</p>
+<ul>
+<li><strong>Local Secondary Indexes</strong> support both eventually
+consistent and strongly consistent reads. If your application logic
+demands that a query immediately reflects the latest writes (such as
+inventory verification, financial ledgers, or real-time authorization
+checks), an LSI is the only secondary index option in DynamoDB that
+supports <code>ConsistentRead = true</code>.</li>
+<li><strong>Global Secondary Indexes</strong> only support eventual
+consistency. Replicating updates to a GSI occurs asynchronously,
+introducing replication lag that can result in stale reads.</li>
+</ul>
+<h2 id="2-querying-across-the-same-partition-key">2. Querying Across the
+Same Partition Key</h2>
+<p>An LSI requires the partition key to be identical to the base table's
+partition key, altering only the sort key.</p>
+<p>You should choose an LSI when your access pattern strictly
+involves:</p>
+<ul>
+<li>The same entity or partition boundary (same partition key).</li>
+<li>An alternative attribute to sort, filter, or rank items within that
+entity (different sort key).</li>
+</ul>
+<p>If your query requires searching across different partition keys or
+omitting the partition key altogether, a GSI is mandatory. However, if
+your access pattern naturally operates within the existing partition
+boundary, an LSI avoids the overhead of managing a global index.</p>
+<h2 id="3-unified-capacity-and-cost-efficiency">3. Unified Capacity and
+Cost Efficiency</h2>
+<p>Throughput billing and capacity management differ significantly
+between the two index types:</p>
+<ul>
+<li><strong>LSIs consume capacity from the base table.</strong> Read
+operations on an LSI consume the Read Capacity Units (RCUs) allocated to
+the base table, and writes to items that affect the index consume the
+base table's Write Capacity Units (WCUs). This eliminates the
+operational overhead of provisioning, monitoring, and auto-scaling
+separate throughput settings.</li>
+<li><strong>GSIs require dedicated capacity.</strong> A GSI has its own
+provisioned or on-demand throughput. Under-provisioning a GSI can cause
+write throttling on the base table itself, requiring developers to
+carefully balance GSI throughput with table writes.</li>
+</ul>
+<p>Choosing an LSI simplifies capacity planning when the workload volume
+against the secondary index aligns closely with the base table's overall
+read and write patterns.</p>
+<h2 id="4-immediate-consistency-within-transactions">4. Immediate
+Consistency Within Transactions</h2>
+<p>When executing write operations that involve DynamoDB transactions
+(<code>TransactWriteItems</code>), LSIs maintain atomicity and immediate
+consistency alongside the base table writes. Because the LSI data is
+stored in the same storage nodes (item collections) as the base table
+data, writes to the table and updates to the LSI are committed
+synchronously.</p>
+<p>With a GSI, updates are committed asynchronously after the
+transaction completes on the base table. If your downstream processes
+rely on an index reflecting transactional writes without latency, an LSI
+is required.</p>
+<h2 id="constraints-to-consider-before-selecting-an-lsi">Constraints to
+Consider Before Selecting an LSI</h2>
+<p>While an LSI offers consistency and cost benefits, it introduces
+structural constraints that must fit your system requirements:</p>
+<ul>
+<li><strong>Creation at Table Definition:</strong> LSIs can only be
+created at the time of table creation. They cannot be added, modified,
+or deleted afterward. If your data model evolves, adding a new index
+will require creating a GSI or migrating to a new table.</li>
+<li><strong>The 10 GB Item Collection Limit:</strong> When a table has
+one or more LSIs, all items sharing the same partition key value (known
+as an item collection) cannot exceed 10 GB in total size across the base
+table and its LSIs. If an item collection breaches 10 GB, DynamoDB
+rejects further writes for that partition key.</li>
+<li><strong>Index Limit:</strong> A table can have a maximum of 5 LSIs,
+compared to up to 20 GSIs per table by default.</li>
+</ul>
+<h2 id="summary-checklist">Summary Checklist</h2>
+<p>Select a Local Secondary Index over a Global Secondary Index
+when:</p>
+<ol type="1">
+<li>Your application requires <strong>strongly consistent reads</strong>
+on secondary query patterns.</li>
+<li>The query pattern uses the <strong>same partition key</strong> as
+the base table.</li>
+<li>You want the index to <strong>share the base table’s
+throughput</strong> rather than managing separate index capacity.</li>
+<li>Your partition size will comfortably stay <strong>under the 10 GB
+item collection limit</strong>.</li>
+<li>You can define the index schema <strong>upfront during table
+creation</strong>.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/when-to-use-an-lsi-over-a-gsi-in-dynamo-db';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

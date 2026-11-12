@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB WCU Calculation for Nested Map Updates - dynamodb</title>
+    <meta name="description" content="When updating nested map attributes in Amazon DynamoDB, consumed Write Capacity Units (WCUs) are calculated based on the total size of the entire item rather than the size of the specific nested attribute being modified. DynamoDB determines write consumpt">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-wcu-calculation-for-nested-map-updates">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB WCU Calculation for Nested Map Updates - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-wcu-calculation-for-nested-map-updates" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When updating nested map attributes in Amazon DynamoDB, consumed Write Capacity Units (WCUs) are calculated based on the total size of the entire item rather than the size of the specific nested attribute being modified. DynamoDB determines write consumpt" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-wcu-calculation-for-nested-map-updates">DynamoDB WCU
+Calculation for Nested Map Updates</h1>
+<p>When updating nested map attributes in Amazon DynamoDB, consumed
+Write Capacity Units (WCUs) are calculated based on the total size of
+the entire item rather than the size of the specific nested attribute
+being modified. DynamoDB determines write consumption by evaluating the
+larger of the item's size before the update or after the update,
+rounding that value up to the nearest 1 KB boundary. This guide explains
+the exact formula DynamoDB uses to bill nested map updates, demonstrates
+the calculation with an example, and outlines the architectural
+implications of modifying nested structures.</p>
+<h2 id="the-core-billing-rule-for-item-updates">The Core Billing Rule
+for Item Updates</h2>
+<p>DynamoDB uses the <code>UpdateItem</code> API action to modify
+attributes, including deep updates into nested maps using update
+expressions (such as
+<code>SET profile.settings.theme = :val</code>).</p>
+<p>Even though only a single nested key changes, DynamoDB does not meter
+writes on the diff or the patch size. The write cost is determined by
+this rule:</p>
+<p><span class="math display">\[\text{Consumed WCUs} = \left\lceil
+\frac{\max(\text{Item Size Before Update}, \text{Item Size After
+Update})}{1\text{ KB}} \right\rceil\]</span></p>
+<p>For a standard write operation, one WCU provides up to one write per
+second for an item up to 1 KB in size. Any update larger than 1 KB
+consumes additional WCUs in 1 KB increments. If you use transactional
+writes (<code>TransactWriteItems</code>), the consumed units are
+doubled.</p>
+<h2 id="step-by-step-example">Step-by-Step Example</h2>
+<p>Consider an item representing a user profile with a nested map:</p>
+<ol type="1">
+<li><strong>Initial Item Size:</strong> The user profile contains
+account data, metadata, and a large nested <code>preferences</code> map,
+totaling 3.2 KB.</li>
+<li><strong>The Update:</strong> You execute an <code>UpdateItem</code>
+request modifying a single nested field:
+<code>SET preferences.notifications.email = :false</code>. This boolean
+change adds minimal data, leaving the final item size at roughly 3.21
+KB.</li>
+<li><strong>Determining Base Size:</strong> DynamoDB compares the
+pre-update size (3.2 KB) and post-update size (3.21 KB) and selects the
+larger value: 3.21 KB.</li>
+<li><strong>Rounding Up:</strong> 3.21 KB rounds up to the next full
+kilobyte boundary, which is 4 KB.</li>
+<li><strong>Final Consumption:</strong> The operation consumes <strong>4
+WCUs</strong> under standard consistency.</li>
+</ol>
+<p>Even though the payload sent across the network was only a few bytes,
+you are billed for writing the entire 4 KB item.</p>
+<h2 id="why-nested-updates-do-not-reduce-write-units">Why Nested Updates
+Do Not Reduce Write Units</h2>
+<p>Update expressions are a convenience mechanism for the application
+layer. They prevent race conditions by allowing atomic updates, and they
+save network bandwidth between your application and DynamoDB because you
+only send the modified path.</p>
+<p>However, DynamoDB's underlying storage engine reads the complete
+item, applies the attribute modification in memory, and writes the
+entire item back to solid-state storage. Because storage operations
+persist the complete item record to multiple Availability Zones, write
+metering reflects the entire persisted record.</p>
+<h2 id="calculating-item-and-attribute-sizes">Calculating Item and
+Attribute Sizes</h2>
+<p>To estimate capacity consumption accurately, calculate total item
+size using DynamoDB's attribute sizing rules:</p>
+<ul>
+<li><strong>Strings:</strong> Length of the string in UTF-8 bytes.</li>
+<li><strong>Numbers:</strong> Approximately 1 byte per two significant
+digits, plus 1 byte for formatting (up to 21 bytes).</li>
+<li><strong>Binary:</strong> The raw byte length.</li>
+<li><strong>Booleans and Nulls:</strong> 1 byte.</li>
+<li><strong>Maps and Lists:</strong> 3 bytes of overhead per map or
+list, plus the sum of each key's string size, plus the size of each
+nested value.</li>
+<li><strong>Attribute Names:</strong> The UTF-8 byte length of all
+attribute names across the item.</li>
+</ul>
+<h2 id="design-considerations-for-nested-maps">Design Considerations for
+Nested Maps</h2>
+<p>If an item contains large nested maps that undergo frequent writes,
+the cost in WCUs can scale rapidly. Common patterns to optimize write
+costs include:</p>
+<ul>
+<li><strong>Separating Frequently Updated Data:</strong> Split
+high-frequency attributes into a separate table or a separate 1:1
+related item within the same partition key, keeping the frequently
+written item well under 1 KB.</li>
+<li><strong>Compressing Static Payloads:</strong> If the nested data is
+read frequently but rarely updated as individual keys, serialize and
+compress the map (e.g., using GZIP into a Binary attribute) to reduce
+overall item size below a lower 1 KB threshold.</li>
+<li><strong>Avoiding Accumulator Maps:</strong> Maps that grow
+continuously over time (such as event logs or activity histories) cause
+every future update to cost progressively more WCUs. Move append-only
+structures to individual items using a 1:N composite primary key
+design.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-wcu-calculation-for-nested-map-updates';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

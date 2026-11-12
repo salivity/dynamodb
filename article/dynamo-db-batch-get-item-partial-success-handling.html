@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB BatchGetItem Partial Success Handling - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB&#39;s BatchGetItem operation retrieves up to 100 items and up to 16 MB of data across multiple tables in a single API call. When DynamoDB cannot process all requested items due to throughput throttling or response size limits, it does not fail">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-batch-get-item-partial-success-handling">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB BatchGetItem Partial Success Handling - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-batch-get-item-partial-success-handling" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB&#39;s BatchGetItem operation retrieves up to 100 items and up to 16 MB of data across multiple tables in a single API call. When DynamoDB cannot process all requested items due to throughput throttling or response size limits, it does not fail" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-batchgetitem-partial-success-handling">DynamoDB
+BatchGetItem Partial Success Handling</h1>
+<p>Amazon DynamoDB's <code>BatchGetItem</code> operation retrieves up to
+100 items and up to 16 MB of data across multiple tables in a single API
+call. When DynamoDB cannot process all requested items due to throughput
+throttling or response size limits, it does not fail the entire
+operation. Instead, it returns an HTTP 200 OK status code accompanied by
+a partial success response. This article explains why partial successes
+occur, how DynamoDB formats the returned payload, and the best practices
+for handling unprocessed keys in application code.</p>
+<h3 id="why-partial-success-occurs">Why Partial Success Occurs</h3>
+<p>A <code>BatchGetItem</code> operation returns a partial success under
+two primary conditions:</p>
+<ol type="1">
+<li><strong>Provisioned Throughput Exceeded:</strong> One or more
+underlying partitions or tables experience throttling because
+consumption exceeds provisioned read capacity units (RCUs) or on-demand
+limits. DynamoDB processes the items it can and defers the throttled
+items.</li>
+<li><strong>Response Size Threshold:</strong> A single
+<code>BatchGetItem</code> response cannot exceed 16 MB. If the total
+size of the requested items crosses this threshold, DynamoDB retrieves
+items until the limit is approached and leaves the remaining items
+unprocessed.</li>
+</ol>
+<p>Because individual item failures do not cause the entire operation to
+abort, DynamoDB does not raise an exception or return a 4xx/5xx status
+code.</p>
+<h3 id="structure-of-the-response">Structure of the Response</h3>
+<p>A partial success response splits the output into two main top-level
+attributes:</p>
+<ul>
+<li><strong><code>Responses</code></strong>: A map containing the
+successfully retrieved items, grouped by table name. Each entry contains
+a list of attribute maps corresponding to the fetched items.</li>
+<li><strong><code>UnprocessedKeys</code></strong>: A map containing the
+items that DynamoDB could not process. The structure of
+<code>UnprocessedKeys</code> is identical to the
+<code>RequestItems</code> parameter used in the original request. It
+includes the primary keys of the remaining items, along with any
+projection expressions or read consistency parameters specified
+originally.</li>
+</ul>
+<p>If all items are retrieved successfully, <code>UnprocessedKeys</code>
+will be empty or omitted from the response.</p>
+<h3 id="implementing-the-retry-loop">Implementing the Retry Loop</h3>
+<p>Because <code>UnprocessedKeys</code> matches the input structure
+expected by <code>BatchGetItem</code>, handling unprocessed items
+requires passing this map directly into a subsequent request.</p>
+<p>Proper handling involves the following steps:</p>
+<ol type="1">
+<li><strong>Inspect the Output:</strong> After executing
+<code>BatchGetItem</code>, evaluate whether <code>UnprocessedKeys</code>
+exists and contains elements.</li>
+<li><strong>Re-invoke <code>BatchGetItem</code>:</strong> Use the
+returned <code>UnprocessedKeys</code> object directly as the
+<code>RequestItems</code> parameter for the next call.</li>
+<li><strong>Apply Exponential Backoff and Jitter:</strong> If the
+unprocessed status was caused by throughput throttling, immediate
+retries will likely fail. Introduce a backoff algorithm that increases
+delay exponentially with each retry and includes randomized jitter to
+avoid synchronization spikes against the database.</li>
+<li><strong>Enforce Retry Limits:</strong> Define a maximum number of
+retry attempts or a timeout ceiling to prevent infinite loops in the
+event of persistent infrastructure saturation or hard partition
+limits.</li>
+<li><strong>Aggregate Results:</strong> Accumulate the items from the
+<code>Responses</code> map across each iteration until
+<code>UnprocessedKeys</code> is completely empty or the retry limit is
+reached.</li>
+</ol></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-batch-get-item-partial-success-handling';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

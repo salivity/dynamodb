@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Cost Allocation Using Table Tags - dynamodb</title>
+    <meta name="description" content="Managing cloud expenditures across multiple business units requires granular visibility into resource consumption. Amazon DynamoDB achieves precise cost attribution through table tagging paired with AWS Cost Allocation Tags. By assigning standardized meta">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-cost-allocation-using-table-tags">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Cost Allocation Using Table Tags - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-cost-allocation-using-table-tags" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Managing cloud expenditures across multiple business units requires granular visibility into resource consumption. Amazon DynamoDB achieves precise cost attribution through table tagging paired with AWS Cost Allocation Tags. By assigning standardized meta" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-cost-allocation-using-table-tags">DynamoDB Cost
+Allocation Using Table Tags</h1>
+<p>Managing cloud expenditures across multiple business units requires
+granular visibility into resource consumption. Amazon DynamoDB achieves
+precise cost attribution through table tagging paired with AWS Cost
+Allocation Tags. By assigning standardized metadata—such as department
+names, cost center IDs, or project codes—to individual tables,
+organizations can categorize, monitor, and apportion database costs.
+This guide details how to establish a tagging taxonomy, activate cost
+allocation tags in the AWS Billing console, analyze department-level
+DynamoDB expenses, and enforce tagging governance across the
+organization.</p>
+<h2 id="1-establish-a-departmental-tagging-taxonomy">1. Establish a
+Departmental Tagging Taxonomy</h2>
+<p>Before applying tags, define a consistent key-value schema across
+your AWS organization. For departmental cost tracking, standard keys
+typically include:</p>
+<ul>
+<li><code>Department</code>: Identifies the business unit (e.g.,
+<code>Engineering</code>, <code>Marketing</code>,
+<code>Finance</code>).</li>
+<li><code>CostCenter</code>: Provides an accounting code (e.g.,
+<code>CC-4011</code>).</li>
+<li><code>Environment</code>: Distinguishes between lifecycles (e.g.,
+<code>Production</code>, <code>Staging</code>,
+<code>Development</code>).</li>
+</ul>
+<p>Tags can be assigned when creating a table or added to existing
+tables via the AWS Management Console, the AWS CLI, or Infrastructure as
+Code (IaC) tools like Terraform and AWS CloudFormation.</p>
+<p>Using the AWS CLI:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">aws</span> dynamodb tag-resource <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">--resource-arn</span> arn:aws:dynamodb:us-east-1:123456789012:table/OrdersTable <span class="dt">\</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">--tags</span> Key=Department,Value=Engineering Key=CostCenter,Value=CC-4011</span></code></pre></div>
+<h2 id="2-activate-cost-allocation-tags-in-aws-billing">2. Activate Cost
+Allocation Tags in AWS Billing</h2>
+<p>Tags applied to DynamoDB tables do not appear in financial reports
+automatically. An account administrator must explicitly activate them as
+user-defined cost allocation tags.</p>
+<ol type="1">
+<li>Navigate to the <strong>AWS Billing and Cost Management</strong>
+console.</li>
+<li>Select <strong>Cost allocation tags</strong> from the navigation
+pane.</li>
+<li>Locate the <strong>User-defined cost allocation tags</strong>
+tab.</li>
+<li>Search for your defined keys (e.g., <code>Department</code>,
+<code>CostCenter</code>).</li>
+<li>Select the checkboxes next to the keys and click
+<strong>Activate</strong>.</li>
+</ol>
+<p><em>Note: Once activated, it can take up to 24 hours for the tags to
+begin populating in billing reports. Tagging only applies to costs
+incurred after activation; it does not retroactively categorize past
+charges.</em></p>
+<h2 id="3-monitor-and-distribute-costs">3. Monitor and Distribute
+Costs</h2>
+<p>Once tags are active, DynamoDB charges can be tracked across all
+pricing components, including read/write capacity units (or on-demand
+requests), data storage, point-in-time recovery (PITR), streams, and
+global table replication.</p>
+<h3 id="aws-cost-explorer">AWS Cost Explorer</h3>
+<p>Use AWS Cost Explorer to visualize departmental spending:</p>
+<ul>
+<li>Set the service filter to <strong>DynamoDB</strong>.</li>
+<li>Set the <strong>Group by</strong> parameter to your cost allocation
+tag (e.g., <code>Tag: Department</code>).</li>
+<li>Identify which departments drive high-capacity spikes or excessive
+storage accumulation.</li>
+</ul>
+<h3 id="aws-cost-and-usage-report-cur">AWS Cost and Usage Report
+(CUR)</h3>
+<p>For automated accounting workflows, enable AWS Cost and Usage
+Reports. The CUR delivers detailed CSV files to an Amazon S3 bucket,
+containing line-item charges paired with your tag columns. Financial
+teams can ingest this data into tools like Amazon Athena, Amazon
+QuickSight, or Snowflake to execute internal chargeback or showback
+processes.</p>
+<h3 id="aws-budgets">AWS Budgets</h3>
+<p>Create specific budgets based on departmental tags. For example,
+configure an alert that notifies the Engineering lead when DynamoDB
+tables tagged <code>Department: Engineering</code> exceed 80% of their
+allocated monthly budget.</p>
+<h2 id="4-enforce-tagging-compliance">4. Enforce Tagging Compliance</h2>
+<p>To prevent unallocated costs from untagged DynamoDB tables, implement
+automated governance mechanisms:</p>
+<ul>
+<li><strong>Service Control Policies (SCPs):</strong> In AWS
+Organizations, use SCPs to deny the <code>dynamodb:CreateTable</code>
+action if the request does not include the required
+<code>Department</code> tag key.</li>
+<li><strong>AWS Tag Policies:</strong> Standardize capitalization and
+accepted tag values (e.g., enforcing <code>Engineering</code> instead of
+<code>engineering</code> or <code>ENG</code>) across accounts.</li>
+<li><strong>AWS Config:</strong> Deploy managed rules like
+<code>required-tags</code> to evaluate DynamoDB tables continuously and
+flag non-compliant resources for remediation.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-cost-allocation-using-table-tags';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

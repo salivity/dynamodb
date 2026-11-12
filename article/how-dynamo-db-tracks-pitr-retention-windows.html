@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Tracks PITR Retention Windows - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB point-in-time recovery (PITR) provides continuous, automatic backups that protect your tables against accidental write or delete operations. This article explains how DynamoDB tracks and manages its retention windows, detailing the underly">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-tracks-pitr-retention-windows">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Tracks PITR Retention Windows - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-tracks-pitr-retention-windows" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB point-in-time recovery (PITR) provides continuous, automatic backups that protect your tables against accidental write or delete operations. This article explains how DynamoDB tracks and manages its retention windows, detailing the underly" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-tracks-pitr-retention-windows">How DynamoDB Tracks
+PITR Retention Windows</h1>
+<p>Amazon DynamoDB point-in-time recovery (PITR) provides continuous,
+automatic backups that protect your tables against accidental write or
+delete operations. This article explains how DynamoDB tracks and manages
+its retention windows, detailing the underlying mechanics of transaction
+logging, restorable timestamp boundaries, and the automated pruning of
+historical data.</p>
+<h2 id="continuous-transaction-logging-and-micro-checkpoints">Continuous
+Transaction Logging and Micro-Checkpoints</h2>
+<p>DynamoDB does not use traditional daily snapshots to maintain PITR.
+Instead, once enabled, the service continuously records all table
+modifications to internal transaction logs and couples them with
+periodic baseline checkpoints of the storage partitions.</p>
+<p>Every item creation, update, and deletion is recorded with an
+authoritative internal timestamp. Because these changes are tracked in
+continuous storage streams alongside partition data, DynamoDB can replay
+or reconstruct table states up to any designated second within the
+active retention window.</p>
+<h2 id="the-restorable-window-boundaries">The Restorable Window
+Boundaries</h2>
+<p>DynamoDB programmatically exposes and monitors its recovery window
+using two primary timestamps: <code>EarliestRestorableDateTime</code>
+and <code>LatestRestorableDateTime</code>.</p>
+<ul>
+<li><strong><code>EarliestRestorableDateTime</code></strong>: This
+timestamp represents the oldest second to which the table can be
+restored. When you first enable PITR, this value is established shortly
+after activation (typically within a few minutes) once the initial
+baseline is secured. As the table operates, this value remains fixed
+until the table reaches the maximum 35-day (840-hour) threshold. Once
+reached, <code>EarliestRestorableDateTime</code> shifts forward
+continuously, maintaining an exact 35-day sliding window.</li>
+<li><strong><code>LatestRestorableDateTime</code></strong>: This
+timestamp indicates the most recent point in time to which a table can
+be safely restored. DynamoDB continually updates this value, maintaining
+a lag of only a few seconds behind the current time to account for log
+replication across multiple Availability Zones.</li>
+</ul>
+<p>You can inspect both timestamps at any time using the AWS Management
+Console, the AWS CLI (<code>describe-continuous-backups</code>), or the
+DynamoDB API.</p>
+<h2 id="rolling-retention-and-automatic-pruning">Rolling Retention and
+Automatic Pruning</h2>
+<p>DynamoDB automatically manages the retention lifecycle without
+consuming read or write capacity units from your table. As logs age
+beyond the 35-day retention boundary, the internal storage system
+expires and prunes the historical logs that precede the
+<code>EarliestRestorableDateTime</code>. This background garbage
+collection ensures you are only billed for the data within the active
+35-day window.</p>
+<p>If PITR is disabled on a table, the retention window is closed
+immediately. DynamoDB resets the tracking metadata, invalidates the
+continuous backup state, and deletes the recovery logs, preventing any
+further restoration to points in time prior to the deactivation.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-tracks-pitr-retention-windows';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

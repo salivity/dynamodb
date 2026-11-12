@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Query Pagination: Handling Large Results - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB processes large result sets by automatically dividing query responses into manageable chunks through a process called pagination. When a Query operation matches more data than the platform&#39;s default size limit or a client-specified item li">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-query-pagination-handling-large-results">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Query Pagination: Handling Large Results - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-query-pagination-handling-large-results" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB processes large result sets by automatically dividing query responses into manageable chunks through a process called pagination. When a Query operation matches more data than the platform&#39;s default size limit or a client-specified item li" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-query-pagination-handling-large-results">DynamoDB Query
+Pagination: Handling Large Results</h1>
+<p>Amazon DynamoDB processes large result sets by automatically dividing
+query responses into manageable chunks through a process called
+pagination. When a <code>Query</code> operation matches more data than
+the platform's default size limit or a client-specified item limit,
+DynamoDB returns a partial result along with a pagination token known as
+<code>LastEvaluatedKey</code>. By feeding this token back into
+subsequent requests as the <code>ExclusiveStartKey</code>, client
+applications can iteratively retrieve the remaining data across multiple
+network calls until the entire result set is consumed.</p>
+<h2 id="the-1-mb-size-boundary">The 1 MB Size Boundary</h2>
+<p>DynamoDB imposes a strict 1 MB limit on the amount of data a single
+<code>Query</code> operation can return. This limit is evaluated against
+the raw size of the items read from the table, not the size after
+client-side transformations or network compression.</p>
+<p>If a query matches data that exceeds 1 MB, DynamoDB immediately halts
+the read operation, packages the items read up to that point, and
+returns them to the caller. This boundary ensures that individual
+requests maintain predictable, single-digit millisecond latency and do
+not consume excessive system resources.</p>
+<h2
+id="the-pagination-mechanism-lastevaluatedkey-and-exclusivestartkey">The
+Pagination Mechanism: LastEvaluatedKey and ExclusiveStartKey</h2>
+<p>DynamoDB uses a state-free token mechanism based on the primary key
+values of the table or index being queried:</p>
+<ol type="1">
+<li><strong><code>LastEvaluatedKey</code></strong>: When a query
+operation terminates before reading all matching items—either because it
+hit the 1 MB size limit or a defined <code>Limit</code> parameter—the
+response payload includes a <code>LastEvaluatedKey</code>. This
+attribute contains the primary key (partition key and, if applicable,
+sort key) of the last item evaluated during the request.</li>
+<li><strong><code>ExclusiveStartKey</code></strong>: To fetch the next
+batch of records, the client submits a new <code>Query</code> request
+identical to the original, with the addition of the
+<code>ExclusiveStartKey</code> parameter set to the value of the
+received <code>LastEvaluatedKey</code>.</li>
+</ol>
+<p>DynamoDB uses the <code>ExclusiveStartKey</code> to determine the
+exact point from which to resume the query, skipping the item
+represented by that key and continuing forward in the specified sort
+order. When a query reaches the end of the matching result set, the
+response omits the <code>LastEvaluatedKey</code>, signaling that all
+data has been fetched.</p>
+<h2 id="filterexpressions-and-pagination">FilterExpressions and
+Pagination</h2>
+<p>A critical aspect of DynamoDB pagination is the interaction between
+<code>FilterExpression</code> and the 1 MB limit:</p>
+<ul>
+<li>DynamoDB applies the query's partition key and sort key conditions
+first to identify the candidate items.</li>
+<li>It reads items up to the 1 MB limit.</li>
+<li>It then applies the <code>FilterExpression</code> to remove
+non-matching records <em>after</em> reading them from disk.</li>
+</ul>
+<p>Because filtering occurs after the read operation, a query response
+might contain an empty <code>Items</code> array while still returning a
+<code>LastEvaluatedKey</code>. Applications must not rely on an empty
+item array as an indicator that the query is finished; the query is only
+complete when <code>LastEvaluatedKey</code> is absent from the
+response.</p>
+<h2 id="implementing-pagination-in-code">Implementing Pagination in
+Code</h2>
+<p>Processing paginated data requires an iterative loop:</p>
+<ol type="1">
+<li><strong>Initial Query</strong>: Send the <code>Query</code> request
+with the required key condition expression.</li>
+<li><strong>Process Batch</strong>: Process the array of records
+returned in the <code>Items</code> field.</li>
+<li><strong>Evaluate Continuation</strong>: Inspect the response for the
+presence of <code>LastEvaluatedKey</code>.</li>
+<li><strong>Subsequent Calls</strong>: If <code>LastEvaluatedKey</code>
+exists, assign its value to <code>ExclusiveStartKey</code> in the
+parameters for the next call and repeat the process.</li>
+<li><strong>Termination</strong>: Exit the loop once
+<code>LastEvaluatedKey</code> is <code>null</code> or
+<code>undefined</code>.</li>
+</ol>
+<p>Most modern AWS SDKs provide built-in paginator abstractions (such as
+<code>paginateQuery</code> in the AWS SDK for JavaScript v3 or
+paginators in Boto3 for Python) that automate this loop, automatically
+extracting the token and yielding pages or individual items until
+exhaustion.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-query-pagination-handling-large-results';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

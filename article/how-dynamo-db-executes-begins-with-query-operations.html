@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Executes begins_with Query Operations - dynamodb</title>
+    <meta name="description" content="This article provides a comprehensive overview of how Amazon DynamoDB processes Query operations using the beginswith function. It covers the underlying architectural mechanics, including partition routing, sort key indexing, and contiguous sequential rea">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-begins-with-query-operations">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Executes begins_with Query Operations - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-begins-with-query-operations" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides a comprehensive overview of how Amazon DynamoDB processes Query operations using the beginswith function. It covers the underlying architectural mechanics, including partition routing, sort key indexing, and contiguous sequential rea" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-executes-begins_with-query-operations">How DynamoDB
+Executes begins_with Query Operations</h1>
+<p>This article provides a comprehensive overview of how Amazon DynamoDB
+processes <code>Query</code> operations using the
+<code>begins_with</code> function. It covers the underlying
+architectural mechanics, including partition routing, sort key indexing,
+and contiguous sequential reads at the storage layer. Additionally, it
+highlights performance characteristics, read capacity unit (RCU)
+consumption, and data type constraints to provide a clear technical
+understanding of this operation.</p>
+<h2 id="the-role-of-the-primary-key-in-queries">The Role of the Primary
+Key in Queries</h2>
+<p>To understand how <code>begins_with</code> works, you must first
+understand DynamoDB's composite primary key structure, which consists of
+a Partition Key (PK) and a Sort Key (SK).</p>
+<p>When executing a <code>Query</code> operation:</p>
+<ul>
+<li>The <strong>Partition Key</strong> requires an exact equality
+condition (<code>PK = :value</code>).</li>
+<li>The <strong>Sort Key</strong> allows range-based condition
+expressions, such as <code>=</code>, <code>&lt;</code>,
+<code>&gt;</code>, <code>between</code>, and
+<code>begins_with</code>.</li>
+</ul>
+<p>The <code>begins_with</code> function cannot be used on a Partition
+Key; it is exclusively valid on the Sort Key within a <code>Query</code>
+operation's <code>KeyConditionExpression</code> (or within non-key
+attributes via a <code>FilterExpression</code>, though with vastly
+different performance implications).</p>
+<h2 id="step-by-step-execution-mechanics">Step-by-Step Execution
+Mechanics</h2>
+<p>When a <code>Query</code> request containing a
+<code>begins_with</code> key condition reaches DynamoDB, the system
+executes the request through several sequential steps:</p>
+<h3 id="1-partition-routing">1. Partition Routing</h3>
+<p>DynamoDB hashes the Partition Key value specified in the request
+using an internal hash function (MD5-based). This hash determines the
+exact physical storage partition where the matching data resides.
+Because an exact Partition Key is required, DynamoDB routes the query
+directly to the target partition replica group without inspecting any
+other partitions across the cluster.</p>
+<h3 id="2-lexicographical-tree-navigation">2. Lexicographical Tree
+Navigation</h3>
+<p>Within the target physical partition, items that share the same
+Partition Key are stored in a sorted structure, typically a B-tree or a
+similar indexed data structure, ordered by the Sort Key.</p>
+<p>For strings and binary data types, this ordering is strictly
+lexicographical by UTF-8 binary encoding. When
+<code>begins_with(SK, :prefix)</code> is evaluated, the storage engine
+does not scan all sort keys. Instead, it performs a binary search or
+tree traversal to locate the exact starting node—the first key that
+matches or is greater than or equal to the specified prefix.</p>
+<h3 id="3-contiguous-range-scanning">3. Contiguous Range Scanning</h3>
+<p>Because all elements sharing a common prefix are stored adjacently in
+lexicographical order, the storage node performs a sequential read
+starting from the first matching entry.</p>
+<p>The read operation moves forward sequentially through the storage
+blocks until it encounters the first Sort Key value that no longer
+starts with the provided prefix. At that exact boundary, reading halts
+immediately.</p>
+<h2 id="performance-and-read-capacity-consumption">Performance and Read
+Capacity Consumption</h2>
+<p>Because <code>begins_with</code> leverages the physical ordering of
+the Sort Key, it is an efficient, targeted read operation rather than a
+brute-force scan.</p>
+<ul>
+<li><strong>Computational Complexity:</strong> Finding the starting
+point takes <span class="math inline">\(O(\log N)\)</span> time, where
+<span class="math inline">\(N\)</span> is the number of items under that
+Partition Key. Scanning the results takes <span
+class="math inline">\(O(K)\)</span> time, where <span
+class="math inline">\(K\)</span> is the number of items that match the
+prefix.</li>
+<li><strong>Read Capacity Units (RCUs):</strong> DynamoDB charges read
+capacity based on the aggregate size of all items read from the disk to
+satisfy the condition, rounded up to the nearest 4 KB. Because DynamoDB
+only reads the contiguous range of items matching the prefix, RCUs are
+consumed strictly by the matching items (plus any items traversed if an
+additional non-key <code>FilterExpression</code> is applied
+subsequently).</li>
+</ul>
+<h2 id="data-type-constraints">Data Type Constraints</h2>
+<p>The <code>begins_with</code> function is restricted at the API and
+storage engine levels to:</p>
+<ul>
+<li><strong>String (<code>S</code>)</strong></li>
+<li><strong>Binary (<code>B</code>)</strong></li>
+</ul>
+<p>It cannot be executed on Number (<code>N</code>) sort keys because
+numbers in DynamoDB are ordered numerically, not character-by-character.
+Prefix-based evaluation does not align with numerical sorting
+semantics.</p>
+<h2 id="key-takeaway">Key Takeaway</h2>
+<p>In a <code>Query</code> operation, <code>begins_with</code> acts as a
+high-performance range filter. By combining hash-based routing to an
+isolated partition with index traversal and contiguous disk reads,
+DynamoDB locates and retrieves prefix-matched items with predictable,
+single-digit millisecond latency regardless of the total table size.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-executes-begins-with-query-operations';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

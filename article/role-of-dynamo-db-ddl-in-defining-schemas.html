@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Role of DynamoDB DDL in Defining Schemas - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB is often categorized as a schemaless NoSQL database, but it relies heavily on Data Definition Language (DDL) concepts to establish critical foundational structures. This article explores how DDL operations—executed via the AWS SDKs, AWS Cl">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/role-of-dynamo-db-ddl-in-defining-schemas">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Role of DynamoDB DDL in Defining Schemas - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/role-of-dynamo-db-ddl-in-defining-schemas" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB is often categorized as a schemaless NoSQL database, but it relies heavily on Data Definition Language (DDL) concepts to establish critical foundational structures. This article explores how DDL operations—executed via the AWS SDKs, AWS Cl" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="role-of-dynamodb-ddl-in-defining-schemas">Role of DynamoDB DDL
+in Defining Schemas</h1>
+<p>Amazon DynamoDB is often categorized as a schemaless NoSQL database,
+but it relies heavily on Data Definition Language (DDL) concepts to
+establish critical foundational structures. This article explores how
+DDL operations—executed via the AWS SDKs, AWS CloudFormation, the AWS
+CLI, or PartiQL—define primary keys, secondary indexes, and operational
+configurations, establishing the explicit boundaries that govern how
+data is indexed, partitioned, and accessed.</p>
+<h2 id="the-concept-of-ddl-in-a-schemaless-database">The Concept of DDL
+in a Schemaless Database</h2>
+<p>Unlike relational database management systems (RDBMS) that require a
+strict column-by-column schema definition, DynamoDB enforces a schema
+only on the attributes used to index and retrieve data. Non-key
+attributes are flexible and dynamic; different items within the same
+table can possess entirely different attributes and data types.</p>
+<p>In DynamoDB, DDL is primarily executed through administrative API
+operations such as <code>CreateTable</code>, <code>UpdateTable</code>,
+and <code>DeleteTable</code>, as well as PartiQL statements like
+<code>CREATE TABLE</code>. The role of DDL is not to govern the payload
+of each item, but to define how data is distributed across physical
+storage partitions and made queryable.</p>
+<h2 id="defining-primary-keys">Defining Primary Keys</h2>
+<p>The most critical role of DynamoDB DDL is specifying the primary key
+during table creation. The primary key uniquely identifies each item and
+dictates partition placement. DDL requires the explicit declaration of
+attribute names and data types (String, Number, or Binary) for these key
+components:</p>
+<ul>
+<li><strong>Partition Key (Simple Primary Key):</strong> A single
+attribute that DynamoDB uses as an input to an internal hash function.
+The output determines the physical partition where the item is
+stored.</li>
+<li><strong>Partition Key and Sort Key (Composite Primary Key):</strong>
+A combination of two attributes. All items with the same partition key
+are stored together in sorted order according to the sort key, enabling
+range queries within a specific partition.</li>
+</ul>
+<p>Once defined via DDL at table creation, primary key definitions are
+immutable. They cannot be altered without recreating the table or
+migrating data.</p>
+<h2 id="declaring-secondary-indexes">Declaring Secondary Indexes</h2>
+<p>DDL allows developers to define alternative query paths through
+Global Secondary Indexes (GSIs) and Local Secondary Indexes (LSIs).
+Because DynamoDB queries are restricted to primary key configurations,
+indexes must be defined to support additional access patterns.</p>
+<ul>
+<li><strong>Local Secondary Indexes (LSIs):</strong> Must be defined at
+table creation via DDL. An LSI uses the same partition key as the base
+table but a different sort key, facilitating alternate range queries
+within the same partition.</li>
+<li><strong>Global Secondary Indexes (GSIs):</strong> Can be defined
+during table creation or added later using DDL <code>UpdateTable</code>
+actions. A GSI can have a partition key and an optional sort key that
+are completely different from the base table.</li>
+</ul>
+<p>Through DDL, administrators also specify the attribute projection for
+each index (such as <code>KEYS_ONLY</code>, <code>INCLUDE</code>, or
+<code>ALL</code>), determining which non-key attributes are replicated
+to the index storage to balance query performance and cost.</p>
+<h2 id="configuring-operational-schemas">Configuring Operational
+Schemas</h2>
+<p>DynamoDB DDL extends beyond keys to configure table-level operational
+characteristics. These configurations form the operational contract for
+the table:</p>
+<ul>
+<li><strong>Capacity Modes:</strong> DDL specifies whether the table
+uses On-Demand capacity or Provisioned capacity with defined Read
+Capacity Units (RCUs) and Write Capacity Units (WCUs).</li>
+<li><strong>DynamoDB Streams:</strong> DDL enables or disables change
+data capture and sets the view type (e.g., keys only, new image, old
+image, or both).</li>
+<li><strong>Time to Live (TTL):</strong> DDL defines the specific
+attribute name that marks items for automatic expiration and
+deletion.</li>
+<li><strong>Encryption and Point-in-Time Recovery (PITR):</strong> DDL
+specifies the encryption provider (AWS-managed or customer-managed KMS
+keys) and backup strategies.</li>
+</ul>
+<p>DynamoDB DDL defines the rigid scaffolding required for high
+performance and horizontal scaling, while leaving individual item
+payloads adaptable to changing application requirements.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/role-of-dynamo-db-ddl-in-defining-schemas';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

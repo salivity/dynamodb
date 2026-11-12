@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Change Data Capture with Kinesis Streams - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB captures item-level modifications—inserts, updates, and deletes—in real time and streams them directly to Amazon Kinesis Data Streams without custom code or provisioning additional compute. This native Change Data Capture (CDC) integration">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-change-data-capture-with-kinesis-streams">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Change Data Capture with Kinesis Streams - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-change-data-capture-with-kinesis-streams" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB captures item-level modifications—inserts, updates, and deletes—in real time and streams them directly to Amazon Kinesis Data Streams without custom code or provisioning additional compute. This native Change Data Capture (CDC) integration" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-change-data-capture-with-kinesis-streams">DynamoDB
+Change Data Capture with Kinesis Streams</h1>
+<p>Amazon DynamoDB captures item-level modifications—inserts, updates,
+and deletes—in real time and streams them directly to Amazon Kinesis
+Data Streams without custom code or provisioning additional compute.
+This native Change Data Capture (CDC) integration enables architectures
+to ingest database mutation events into a centralized streaming pipeline
+for real-time analytics, multi-region replication, audit logging, and
+downstream event-driven processing. It provides high-throughput event
+streaming with flexible retention periods, decoupling change ingestion
+from the core operational database workload.</p>
+<h3 id="how-the-integration-works">How the Integration Works</h3>
+<p>When enabled on a DynamoDB table, the Kinesis Data Streams
+integration monitors the database's internal transaction logs. Whenever
+an application writes, updates, or deletes an item in the DynamoDB
+table, an event record is asynchronously extracted and written to the
+designated Kinesis data stream.</p>
+<p>Because this extraction process occurs out-of-band, streaming records
+does not consume read capacity units (RCUs) or write capacity units
+(WCUs) from the source DynamoDB table. The performance and latency of
+write operations on DynamoDB remain unaffected.</p>
+<h3 id="record-structure-and-information">Record Structure and
+Information</h3>
+<p>Each event published to Kinesis contains detailed metadata and
+payload attributes about the modification:</p>
+<ul>
+<li><strong>Event Name:</strong> Identifies the type of operation
+performed (<code>INSERT</code>, <code>MODIFY</code>, or
+<code>REMOVE</code>).</li>
+<li><strong>Keys:</strong> The partition key and sort key of the
+modified item.</li>
+<li><strong>Item Images:</strong> Depending on how the mutation
+occurred, the payload includes the item's previous state
+(<code>OldImage</code>), the new state after modification
+(<code>NewImage</code>), or both.</li>
+<li><strong>Approximate Creation DateTime:</strong> A timestamp
+indicating when the item modification was recorded in DynamoDB.</li>
+</ul>
+<h3 id="ordering-and-shard-distribution">Ordering and Shard
+Distribution</h3>
+<p>DynamoDB uses the primary key of the modified item as the partition
+key when routing records to Kinesis Data Streams. Because Kinesis routes
+records to specific shards based on hash key mapping, all sequential
+modifications to a single DynamoDB item are directed to the same shard.
+This guarantees strict chronological ordering of change events for any
+specific item, allowing downstream consumers to reliably reconstruct
+state transitions.</p>
+<h3 id="key-operational-advantages">Key Operational Advantages</h3>
+<p>Integrating DynamoDB CDC with Kinesis Data Streams introduces
+distinct functional capabilities compared to standard DynamoDB
+Streams:</p>
+<ul>
+<li><strong>Extended Data Retention:</strong> While standard DynamoDB
+Streams retain records for a strict 24-hour window, Kinesis Data Streams
+allows configurable retention from 24 hours up to 365 days,
+accommodating long replay windows and disaster recovery scenarios.</li>
+<li><strong>High-Throughput Fan-Out:</strong> With Kinesis Enhanced
+Fan-Out (EFO), multiple independent consumer applications can read from
+the stream simultaneously with dedicated read throughput (2 MB/second
+per shard per consumer) without contending for bandwidth.</li>
+<li><strong>Direct Ecosystem Integrations:</strong> Change events can be
+consumed natively by AWS Lambda, Amazon Managed Service for Apache
+Flink, or routed to storage sinks like Amazon S3, Amazon OpenSearch
+Service, and data warehouses via Amazon Data Firehose.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-change-data-capture-with-kinesis-streams';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Required Attributes for Creating a DynamoDB Item - dynamodb</title>
+    <meta name="description" content="When creating a new item in Amazon DynamoDB, the only strictly required attributes are those that form the table&#39;s primary key. Because DynamoDB is a NoSQL database with a flexible schema, it does not enforce a rigid structure for non-key attributes. This">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/required-attributes-for-creating-a-dynamo-db-item">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Required Attributes for Creating a DynamoDB Item - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/required-attributes-for-creating-a-dynamo-db-item" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When creating a new item in Amazon DynamoDB, the only strictly required attributes are those that form the table&#39;s primary key. Because DynamoDB is a NoSQL database with a flexible schema, it does not enforce a rigid structure for non-key attributes. This" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="required-attributes-for-creating-a-dynamodb-item">Required
+Attributes for Creating a DynamoDB Item</h1>
+<p>When creating a new item in Amazon DynamoDB, the only strictly
+required attributes are those that form the table's primary key. Because
+DynamoDB is a NoSQL database with a flexible schema, it does not enforce
+a rigid structure for non-key attributes. This article explains the
+exact primary key requirements, how table design dictates required
+fields, and the constraints applied when writing an item.</p>
+<h3 id="the-primary-key-requirement">The Primary Key Requirement</h3>
+<p>DynamoDB requires every item to be uniquely identifiable. As a
+result, the attributes that compose the primary key defined during table
+creation are mandatory for every write operation, such as
+<code>PutItem</code>.</p>
+<p>Depending on how your table is configured, the required attributes
+fall into one of two categories:</p>
+<ol type="1">
+<li><p><strong>Simple Primary Key (Partition Key Only):</strong> If the
+table is configured with a simple primary key, only the
+<strong>Partition Key</strong> (also referred to as the hash key) is
+required. Every new item must include this attribute, and its value must
+conform to the defined data type (String, Number, or Binary).</p></li>
+<li><p><strong>Composite Primary Key (Partition Key and Sort
+Key):</strong> If the table is configured with a composite primary key,
+both the <strong>Partition Key</strong> and the <strong>Sort
+Key</strong> (also referred to as the range key) are strictly required.
+Omitting either attribute will cause the write operation to fail with a
+validation exception.</p></li>
+</ol>
+<h3 id="schemaless-non-key-attributes">Schemaless Non-Key
+Attributes</h3>
+<p>Aside from the partition key and optional sort key, no other
+attributes are required by DynamoDB.</p>
+<ul>
+<li><strong>Flexibility:</strong> You can write an item containing only
+the primary key attributes, or include dozens of additional
+attributes.</li>
+<li><strong>Heterogeneous Data:</strong> Different items in the same
+table do not need to share the same non-key attributes or data
+types.</li>
+<li><strong>Secondary Indexes:</strong> Global Secondary Indexes (GSIs)
+and Local Secondary Indexes (LSIs) do not make attributes mandatory. If
+an item does not contain the attributes required by an index, DynamoDB
+simply does not project that item into the index (acting as a sparse
+index).</li>
+</ul>
+<h3 id="key-constraints-to-keep-in-mind">Key Constraints to Keep in
+Mind</h3>
+<p>While only primary key attributes are strictly required, they must
+meet specific conditions during item creation:</p>
+<ul>
+<li><strong>Non-Empty Values:</strong> Partition and sort key attributes
+cannot contain empty string values or empty binary values.</li>
+<li><strong>Correct Data Type:</strong> The value supplied for a key
+attribute must strictly match the data type declared in the table
+definition.</li>
+<li><strong>Size Limits:</strong> Partition key values have a maximum
+length of 2048 bytes, while sort key values have a maximum length of
+1024 bytes.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/required-attributes-for-creating-a-dynamo-db-item';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

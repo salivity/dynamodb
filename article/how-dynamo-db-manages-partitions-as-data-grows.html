@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Manages Partitions as Data Grows - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB automatically manages data growth and performance by dynamically allocating underlying storage units known as partitions. As an application writes more data to a table, DynamoDB monitors storage metrics and initiates partition splitting to">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-partitions-as-data-grows">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Manages Partitions as Data Grows - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-partitions-as-data-grows" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB automatically manages data growth and performance by dynamically allocating underlying storage units known as partitions. As an application writes more data to a table, DynamoDB monitors storage metrics and initiates partition splitting to" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-manages-partitions-as-data-grows">How DynamoDB
+Manages Partitions as Data Grows</h1>
+<p>Amazon DynamoDB automatically manages data growth and performance by
+dynamically allocating underlying storage units known as partitions. As
+an application writes more data to a table, DynamoDB monitors storage
+metrics and initiates partition splitting to distribute data and
+throughput evenly across multiple physical servers. This article details
+the triggers for partition reallocation, the internal mechanics of
+partition splitting, and how read and write resources are redistributed
+to maintain predictable, low-latency performance without downtime.</p>
+<h3 id="partition-limits-and-allocation-triggers">Partition Limits and
+Allocation Triggers</h3>
+<p>DynamoDB distributes table data across multiple Solid State Drives
+(SSDs) backed by storage nodes. Each individual partition has hard
+architectural constraints:</p>
+<ul>
+<li><strong>Storage Limit:</strong> A single partition holds a maximum
+of 10 GB of data.</li>
+<li><strong>Throughput Limit:</strong> A single partition supports a
+maximum of 1,000 Write Capacity Units (WCUs) or 3,000 Read Capacity
+Units (RCUs).</li>
+</ul>
+<p>When an application's data volume increases and pushes an existing
+partition near the 10 GB storage boundary, DynamoDB triggers an
+automated resource reallocation process to prevent storage exhaustion
+and performance degradation.</p>
+<h3 id="the-partition-splitting-process">The Partition Splitting
+Process</h3>
+<p>Resource reallocation driven by storage growth relies on an automated
+background process called partition splitting. DynamoDB accomplishes
+this using the following steps:</p>
+<ol type="1">
+<li><strong>Detection:</strong> Internal storage management monitors
+detect that a partition is approaching the 10 GB storage limit.</li>
+<li><strong>Provisioning:</strong> DynamoDB provisions a new partition
+on a separate storage node within the fleet.</li>
+<li><strong>Key Range Division:</strong> DynamoDB uses consistent
+hashing to assign items to partitions based on their partition key
+value. During a split, the hash range assigned to the parent partition
+is divided into two distinct sub-ranges.</li>
+<li><strong>Data Migration:</strong> Data from the parent partition is
+distributed between the two new child partitions according to the new
+hash ranges.</li>
+<li><strong>Pointer Update:</strong> DynamoDB's request routers update
+their partition mapping metadata. Once updated, incoming read and write
+requests for keys in the divided hash space route directly to the
+appropriate new partition.</li>
+<li><strong>Decommissioning:</strong> Once all data is migrated and
+confirmed, the original parent partition is retired, and its physical
+space is reclaimed by the cluster.</li>
+</ol>
+<p>This operation occurs entirely in the background using continuous
+replication and consensus algorithms, ensuring zero downtime and no
+disruption to ongoing database reads or writes.</p>
+<h3 id="throughput-reallocation-and-adaptive-capacity">Throughput
+Reallocation and Adaptive Capacity</h3>
+<p>When a partition splits strictly due to data growth, the provisioned
+read and write capacity allocated to the original parent partition is
+divided between the two new child partitions:</p>
+<ul>
+<li><strong>Capacity Distribution:</strong> If a table with provisioned
+capacity has a partition allocated 1,000 WCUs and 3,000 RCUs, splitting
+that partition originally halved the provisioned throughput across the
+child partitions (500 WCUs and 1,500 RCUs each).</li>
+<li><strong>Adaptive Capacity:</strong> To prevent partition-splitting
+from causing "hot partition" throttling (where one child receives more
+traffic than the other), DynamoDB utilizes Adaptive Capacity. This
+mechanism continuously monitors traffic patterns and instantly moves
+unused capacity from idle partitions to busier ones, ensuring that
+increased storage does not compromise the throughput of unbalanced
+workloads.</li>
+</ul>
+<h3 id="global-secondary-indexes-gsis">Global Secondary Indexes
+(GSIs)</h3>
+<p>Data growth on the base table often causes proportional growth in
+Global Secondary Indexes. DynamoDB treats each GSI as an independent
+table with its own partition layout. When data volume increases on base
+table attributes that are projected into a GSI, DynamoDB independently
+monitors and splits GSI partitions as they reach the 10 GB limit,
+applying the same automated reallocation process without impacting the
+base table's partition topology.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-manages-partitions-as-data-grows';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Maintains Consistent Read Latency - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB delivers predictable single-digit millisecond read latency whether a table contains ten megabytes or hundreds of terabytes of data. This consistency is achieved through a distributed architecture built on horizontal partitioning, determini">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-maintains-consistent-read-latency">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Maintains Consistent Read Latency - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-maintains-consistent-read-latency" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB delivers predictable single-digit millisecond read latency whether a table contains ten megabytes or hundreds of terabytes of data. This consistency is achieved through a distributed architecture built on horizontal partitioning, determini" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-maintains-consistent-read-latency">How DynamoDB
+Maintains Consistent Read Latency</h1>
+<p>Amazon DynamoDB delivers predictable single-digit millisecond read
+latency whether a table contains ten megabytes or hundreds of terabytes
+of data. This consistency is achieved through a distributed architecture
+built on horizontal partitioning, deterministic hash-based routing,
+bounded partition sizes, and high-performance solid-state drive (SSD)
+storage engines. By eliminating global table scans and index traversals
+during key-based lookups, DynamoDB decouples retrieval time entirely
+from total dataset size.</p>
+<h3 id="horizontal-partitioning-and-bounded-storage-units">Horizontal
+Partitioning and Bounded Storage Units</h3>
+<p>DynamoDB does not store a table as a single, monolithic database
+file. Instead, it automatically divides data into multiple distinct
+storage segments known as partitions.</p>
+<ul>
+<li><strong>Fixed Partition Limits:</strong> A single partition holds a
+maximum of 10 GB of data and supports up to 3,000 Read Capacity Units
+(RCUs) and 1,000 Write Capacity Units (WCUs).</li>
+<li><strong>Automatic Scaling:</strong> As an application writes more
+data, DynamoDB allocates additional partitions rather than allowing
+existing partitions to grow infinitely.</li>
+<li><strong>Bounded Search Spaces:</strong> Because no single partition
+ever exceeds 10 GB, the internal data structures (such as local B-trees)
+that manage records on physical disk remain small. Searching within a
+single partition takes a fixed, bounded amount of time.</li>
+</ul>
+<h3 id="deterministic-hash-based-routing">Deterministic Hash-Based
+Routing</h3>
+<p>DynamoDB uses the table’s partition key to locate items using an
+<span class="math inline">\(O(1)\)</span> constant-time algorithm.</p>
+<ol type="1">
+<li><strong>Hashing the Key:</strong> When an item is queried using its
+partition key, DynamoDB feeds that key into an internal cryptographic
+hash function (MD5).</li>
+<li><strong>Hash-to-Partition Mapping:</strong> The output hash value
+determines exactly which partition owns the item.</li>
+<li><strong>Stateless Request Routers:</strong> The DynamoDB request
+router fleet consults an in-memory partition map to determine the
+physical storage nodes responsible for that specific hash range.</li>
+</ol>
+<p>Because the router determines the destination partition
+mathematically, it does not traverse a massive global index. The time
+required to identify the storage node for a 1 TB table is identical to
+the time required for a 1 GB table.</p>
+<h3 id="low-level-storage-engine-and-ssds">Low-Level Storage Engine and
+SSDs</h3>
+<p>Once the request reaches the target storage node, low-level
+optimizations ensure instant retrieval:</p>
+<ul>
+<li><strong>NVMe SSD Storage:</strong> All partition data resides on
+fast, enterprise-grade solid-state drives engineered for consistent I/O
+operations per second (IOPS).</li>
+<li><strong>Local In-Memory Caching:</strong> Storage nodes maintain
+their own in-memory caches and localized B-trees for fast index lookups
+within the 10 GB partition boundary.</li>
+<li><strong>Minimal Disk I/O:</strong> Reading an item requires, at
+most, a predictable one or two local I/O operations.</li>
+</ul>
+<h3 id="replication-and-consensus-handling">Replication and Consensus
+Handling</h3>
+<p>Every DynamoDB partition is replicated across three nodes in three
+different Availability Zones within an AWS Region, forming a Paxos
+replica group:</p>
+<ul>
+<li><strong>Eventually Consistent Reads:</strong> The request router
+forwards the read request to any one of the three storage replicas,
+selecting the one with the lowest current latency.</li>
+<li><strong>Strongly Consistent Reads:</strong> The request is routed
+directly to the Paxos leader replica, which guarantees retrieval of the
+latest acknowledged write without introducing multi-node coordination
+delays.</li>
+</ul>
+<h3 id="admission-control-and-resource-isolation">Admission Control and
+Resource Isolation</h3>
+<p>To maintain latency under heavy workloads, DynamoDB uses token-bucket
+admission control at the partition level. Each partition is allocated a
+dedicated slice of CPU, memory, and IOPS. This architecture isolates
+workloads and prevents a burst of traffic on one partition from
+degrading the performance of another, ensuring that read latencies
+remain stable under changing scale and access patterns.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-maintains-consistent-read-latency';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

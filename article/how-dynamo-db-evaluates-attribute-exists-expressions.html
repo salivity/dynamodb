@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Evaluates attribute_exists Expressions - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB uses the attributeexists function within condition and filter expressions to determine whether a target attribute is present in an item. This article explains how DynamoDB parses and evaluates this function, how it navigates nested documen">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-attribute-exists-expressions">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Evaluates attribute_exists Expressions - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-attribute-exists-expressions" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB uses the attributeexists function within condition and filter expressions to determine whether a target attribute is present in an item. This article explains how DynamoDB parses and evaluates this function, how it navigates nested documen" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-evaluates-attribute_exists-expressions">How
+DynamoDB Evaluates attribute_exists Expressions</h1>
+<p>Amazon DynamoDB uses the <code>attribute_exists</code> function
+within condition and filter expressions to determine whether a target
+attribute is present in an item. This article explains how DynamoDB
+parses and evaluates this function, how it navigates nested document
+paths, how it handles explicit <code>NULL</code> values versus missing
+attributes, and how its boolean result dictates whether write operations
+succeed or read items are returned.</p>
+<h3 id="syntax-and-basic-evaluation">Syntax and Basic Evaluation</h3>
+<p>The <code>attribute_exists</code> function accepts a single argument:
+the path to the attribute being checked.</p>
+<pre class="text"><code>attribute_exists(path)</code></pre>
+<p>During evaluation, DynamoDB inspects the item currently being
+processed and returns a boolean value:</p>
+<ul>
+<li><strong><code>TRUE</code></strong>: If the specified attribute path
+exists on the item.</li>
+<li><strong><code>FALSE</code></strong>: If the attribute does not exist
+on the item.</li>
+</ul>
+<h3 id="contexts-of-evaluation">Contexts of Evaluation</h3>
+<p>DynamoDB evaluates <code>attribute_exists</code> during two primary
+workflows:</p>
+<ol type="1">
+<li><strong>Conditional Writes
+(<code>ConditionExpression</code>)</strong>: Used in
+<code>PutItem</code>, <code>UpdateItem</code>, and
+<code>DeleteItem</code> requests. DynamoDB retrieves the existing item
+from storage before applying the write. It evaluates the expression
+against the current state of the item. If <code>attribute_exists</code>
+evaluates to <code>FALSE</code> (and is not negated), the entire write
+fails, and DynamoDB raises a
+<code>ConditionalCheckFailedException</code>.</li>
+<li><strong>Read Filtering (<code>FilterExpression</code>)</strong>:
+Used in <code>Query</code> and <code>Scan</code> operations. DynamoDB
+reads the item from storage first, evaluates
+<code>attribute_exists</code>, and only includes the item in the
+returned result set if the expression evaluates to <code>TRUE</code>.
+Filter expressions do not reduce read capacity consumption, as
+evaluation occurs after the item is read.</li>
+</ol>
+<h3 id="nested-paths-and-document-traversal">Nested Paths and Document
+Traversal</h3>
+<p>The <code>path</code> parameter supports complex document paths,
+allowing evaluation inside DynamoDB Maps and Lists:</p>
+<ul>
+<li><strong>Maps</strong>: To check for a nested key, use dot notation
+(e.g., <code>attribute_exists(Address.ZipCode)</code>). DynamoDB
+evaluates the hierarchy from left to right. If any intermediate parent
+attribute does not exist, the evaluation safely yields
+<code>FALSE</code> without throwing an error.</li>
+<li><strong>Lists</strong>: To check for an element at a specific index,
+use bracket notation (e.g.,
+<code>attribute_exists(PhoneNumbers[0])</code>). If the list has fewer
+elements than the specified index, the expression evaluates to
+<code>FALSE</code>.</li>
+</ul>
+<h3 id="attribute-existence-vs-the-null-data-type">Attribute Existence
+vs. The NULL Data Type</h3>
+<p>A common misconception involves attributes stored with the DynamoDB
+<code>NULL</code> data type (<code>{"NULL": true}</code>).</p>
+<p>In DynamoDB, an attribute explicitly set to <code>NULL</code> is
+still an existing attribute. Therefore:</p>
+<ul>
+<li><code>attribute_exists(my_attribute)</code> evaluates to
+<strong><code>TRUE</code></strong> if <code>my_attribute</code> contains
+the value <code>NULL</code>.</li>
+<li>It evaluates to <strong><code>FALSE</code></strong> only if the
+attribute key is completely absent from the item.</li>
+</ul>
+<h3 id="combining-with-logical-operators">Combining with Logical
+Operators</h3>
+<p>The boolean result of <code>attribute_exists</code> can be chained
+using DynamoDB's logical operators: <code>AND</code>, <code>OR</code>,
+and <code>NOT</code>.</p>
+<ul>
+<li><strong>Negation</strong>: While DynamoDB provides a dedicated
+<code>attribute_not_exists(path)</code> function, wrapping
+<code>NOT attribute_exists(path)</code> produces an identical boolean
+outcome.</li>
+<li><strong>Compound Logic</strong>: You can combine existence checks
+with value comparisons. For example,
+<code>attribute_exists(user_id) AND age &gt; :min_age</code> requires
+the <code>user_id</code> attribute to be present and the
+<code>age</code> attribute to both exist and exceed the specified
+threshold. DynamoDB uses short-circuit evaluation for logical operations
+where applicable.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-attribute-exists-expressions';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>When to Switch DynamoDB to On-Demand Capacity - dynamodb</title>
+    <meta name="description" content="Choosing the right billing mode for Amazon DynamoDB directly impacts application performance and cloud infrastructure costs. This article outlines the specific scenarios and workload characteristics that indicate it is time to switch a table from provisio">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/when-to-switch-dynamo-db-to-on-demand-capacity">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="When to Switch DynamoDB to On-Demand Capacity - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/when-to-switch-dynamo-db-to-on-demand-capacity" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Choosing the right billing mode for Amazon DynamoDB directly impacts application performance and cloud infrastructure costs. This article outlines the specific scenarios and workload characteristics that indicate it is time to switch a table from provisio" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="when-to-switch-dynamodb-to-on-demand-capacity">When to Switch
+DynamoDB to On-Demand Capacity</h1>
+<p>Choosing the right billing mode for Amazon DynamoDB directly impacts
+application performance and cloud infrastructure costs. This article
+outlines the specific scenarios and workload characteristics that
+indicate it is time to switch a table from provisioned capacity to
+on-demand mode, including unpredictable traffic spikes, low-utilization
+patterns, and developer overhead reduction.</p>
+<h3 id="unpredictable-or-spiky-traffic-patterns">Unpredictable or Spiky
+Traffic Patterns</h3>
+<p>The primary indicator for switching to on-demand mode is traffic that
+fluctuates rapidly without notice. DynamoDB's provisioned auto-scaling
+requires several minutes to respond to sudden traffic spikes, often
+resulting in <code>ProvisionedThroughputExceededException</code> errors
+during the lag time. If your application frequently experiences
+immediate, sharp surges in reads or writes that cause request
+throttling, on-demand capacity instantly accommodates these bursts
+without manual intervention or pre-warming.</p>
+<h3 id="new-applications-with-unknown-usage-profiles">New Applications
+with Unknown Usage Profiles</h3>
+<p>When launching a new application, microservice, or feature,
+estimating read capacity units (RCUs) and write capacity units (WCUs) is
+challenging. Starting with or switching to on-demand capacity allows you
+to establish a baseline of real-world traffic patterns without risking
+under-provisioning outages or over-provisioning expenses. Once
+historical CloudWatch metrics demonstrate consistent, predictable
+trends, you can re-evaluate whether returning to provisioned mode makes
+financial sense.</p>
+<h3 id="low-intermittent-or-idle-workloads">Low, Intermittent, or Idle
+Workloads</h3>
+<p>Provisioned mode charges for capacity allocated per hour, regardless
+of whether that capacity is consumed. If your workload involves periodic
+batch jobs, dev/test environments, or applications that remain mostly
+idle outside of business hours, provisioned capacity incurs wasted
+spend. On-demand mode charges strictly per request, reducing baseline
+costs to zero for periods with no database activity.</p>
+<h3 id="high-operational-and-management-overhead">High Operational and
+Management Overhead</h3>
+<p>Managing provisioned capacity requires configuring target utilization
+percentages, scaling thresholds, upper and lower bounds, and monitoring
+alarms across multiple tables and global secondary indexes (GSIs). If
+your engineering team spends significant time tuning auto-scaling
+parameters to prevent throttling, switching to on-demand eliminates
+capacity planning and maintenance overhead, freeing resources to focus
+on core product development.</p>
+<h3 id="utilization-consistently-below-6070">Utilization Consistently
+Below 60–70%</h3>
+<p>From a pure cost perspective, on-demand requests cost more per
+individual read and write than heavily utilized provisioned capacity.
+However, if your provisioned table maintains an average utilization rate
+below 50% to 60%—often done deliberately to provide a safety buffer
+against spikes—on-demand is typically the more cost-effective choice.
+Review your CloudWatch <code>ConsumedReadCapacityUnits</code> and
+<code>ConsumedWriteCapacityUnits</code> against your provisioned limits;
+if the gap between consumed and provisioned is consistently wide,
+on-demand will likely lower your monthly bill.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/when-to-switch-dynamo-db-to-on-demand-capacity';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

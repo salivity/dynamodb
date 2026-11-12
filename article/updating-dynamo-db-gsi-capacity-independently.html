@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Updating DynamoDB GSI Capacity Independently - dynamodb</title>
+    <meta name="description" content="Managing Global Secondary Index (GSI) provisioned capacity independently from the base table in Amazon DynamoDB allows granular cost and performance control, but it introduces critical operational implications. While independent read scaling isolates quer">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/updating-dynamo-db-gsi-capacity-independently">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Updating DynamoDB GSI Capacity Independently - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/updating-dynamo-db-gsi-capacity-independently" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Managing Global Secondary Index (GSI) provisioned capacity independently from the base table in Amazon DynamoDB allows granular cost and performance control, but it introduces critical operational implications. While independent read scaling isolates quer" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="updating-dynamodb-gsi-capacity-independently">Updating DynamoDB
+GSI Capacity Independently</h1>
+<p>Managing Global Secondary Index (GSI) provisioned capacity
+independently from the base table in Amazon DynamoDB allows granular
+cost and performance control, but it introduces critical operational
+implications. While independent read scaling isolates query workloads
+from the primary dataset, mismatched write throughput can directly
+impact core operations. This article covers the functional and financial
+impacts of updating GSI capacity separately from its base table,
+highlighting write bottlenecks, read isolation, cost allocation, and
+scaling strategies.</p>
+<h3 id="base-table-write-throttling">Base Table Write Throttling</h3>
+<p>The most significant risk of adjusting GSI capacity independently is
+base table write throttling. When you perform a <code>PutItem</code>,
+<code>UpdateItem</code>, or <code>DeleteItem</code> operation on a base
+table, DynamoDB automatically and asynchronously updates any affected
+GSIs. However, this replication requires sufficient Write Capacity Units
+(WCUs) on the target index.</p>
+<p>If a GSI lacks the provisioned write capacity to accommodate these
+incoming changes, DynamoDB throttles the write request. Because the base
+table and its GSIs must remain consistent, throttling on a GSI directly
+throttles the write operation on the base table, throwing a
+<code>ProvisionedThroughputExceededException</code>. Therefore,
+underprovisioning a GSI relative to the base table's write volume
+creates a severe operational bottleneck for the entire application.</p>
+<h3 id="read-workload-isolation">Read Workload Isolation</h3>
+<p>Unlike write operations, read operations on GSIs and base tables are
+completely decoupled. Increasing or decreasing the Read Capacity Units
+(RCUs) on a GSI has zero impact on the base table’s read capacity.</p>
+<p>This isolation allows you to tailor read performance to specific
+access patterns. For example, if an index is queried heavily for
+reporting or real-time search while the base table is accessed rarely by
+primary key, the GSI can be provisioned with high RCU while keeping the
+base table RCUs low. Conversely, a write-heavy table with an
+infrequently used GSI can keep GSI RCUs at a baseline minimum to prevent
+resource waste.</p>
+<h3 id="cost-optimization">Cost Optimization</h3>
+<p>Decoupling capacity management enables precise cost governance. In
+DynamoDB's provisioned mode, you are billed separately for the
+throughput of the base table and each individual GSI.</p>
+<p>By evaluating the attribute projection of each GSI (such as
+<code>KEYS_ONLY</code>, <code>INCLUDE</code>, or <code>ALL</code>), you
+can forecast the exact capacity consumption. An index with a
+<code>KEYS_ONLY</code> projection typically consumes fewer write
+capacity units per update than an <code>ALL</code> projection on a large
+item. Tuning GSI capacity independently prevents over-provisioning the
+base table simply to support index activity, ensuring you only pay for
+the infrastructure required by specific query patterns.</p>
+<h3 id="managing-asymmetric-scaling">Managing Asymmetric Scaling</h3>
+<p>Because capacity can be updated independently, configuring AWS
+Application Auto Scaling individually for both the base table and each
+GSI is essential.</p>
+<p>If auto-scaling policies are not synchronized properly, a rapid
+traffic spike on the base table might trigger an automated scale-up for
+the table while leaving the GSI at its previous threshold, precipitating
+widespread write failures. To avoid this, auto-scaling target
+utilization metrics and alarm thresholds should be aligned so that GSI
+write capacity increases proportionally alongside base table
+activity.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/updating-dynamo-db-gsi-capacity-independently';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

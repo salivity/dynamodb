@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Partition Key Hashing Works - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB relies on consistent hashing algorithms and an internal hash ring architecture to distribute data and throughput evenly across distributed physical storage nodes. When an item is written or queried, DynamoDB generates an internal hash valu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-partition-key-hashing-works">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Partition Key Hashing Works - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-partition-key-hashing-works" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB relies on consistent hashing algorithms and an internal hash ring architecture to distribute data and throughput evenly across distributed physical storage nodes. When an item is written or queried, DynamoDB generates an internal hash valu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-partition-key-hashing-works">How DynamoDB Partition
+Key Hashing Works</h1>
+<p>Amazon DynamoDB relies on consistent hashing algorithms and an
+internal hash ring architecture to distribute data and throughput evenly
+across distributed physical storage nodes. When an item is written or
+queried, DynamoDB generates an internal hash value from the partition
+key, places that value onto a fixed 128-bit integer space, and maps it
+directly to a specific physical storage partition. Understanding this
+internal calculation reveals how DynamoDB manages horizontal scaling,
+partition splits, and ultra-low latency routing without global locking
+or cluster-wide rebalancing.</p>
+<h3 id="the-internal-hash-function-and-token-space">The Internal Hash
+Function and Token Space</h3>
+<p>When an item is processed, DynamoDB extracts the partition key
+attribute and computes a 128-bit hash value using an internal variant of
+the MD5 hashing algorithm. This computation outputs a scalar integer
+within an immutable token space ranging from 0 to <span
+class="math inline">\(2^{128} - 1\)</span>.</p>
+<p>This uniform numerical range represents a closed hash ring. Because
+the hashing function provides pseudo-random distribution, partition key
+values—even sequential or lexicographically similar ones—are dispersed
+evenly across the entire 128-bit spectrum, minimizing the probability of
+accidental data clustering.</p>
+<h3 id="partition-boundaries-and-the-hash-ring">Partition Boundaries and
+the Hash Ring</h3>
+<p>A DynamoDB table is divided into multiple storage partitions, each
+responsible for a contiguous, non-overlapping segment of the 128-bit
+hash ring.</p>
+<ol type="1">
+<li><strong>Range Assignment:</strong> Each physical storage partition
+is assigned an upper and lower hexadecimal boundary on the ring.</li>
+<li><strong>Key Placement:</strong> When an item's hash is evaluated,
+DynamoDB identifies the partition whose assigned segment covers that
+specific hash integer.</li>
+<li><strong>Storage Group Mapping:</strong> Partitions are not single
+servers; each range corresponds to a three-node replication group
+distributed across Availability Zones operating under a Paxos consensus
+model.</li>
+</ol>
+<h3 id="request-routers-and-the-partition-map">Request Routers and the
+Partition Map</h3>
+<p>Client requests do not hit storage nodes directly. Instead, they land
+on stateless Request Routers within the DynamoDB fleet:</p>
+<ul>
+<li><strong>Hash Evaluation:</strong> The Request Router hashes the
+incoming partition key locally in microseconds.</li>
+<li><strong>Partition Map Lookup:</strong> The router consults an
+in-memory cache of the table's "Partition Map." This map translates the
+calculated 128-bit integer into the specific storage replica group
+responsible for that token range.</li>
+<li><strong>Direct Routing:</strong> The router immediately directs the
+read or write request to the appropriate node (the Paxos leader for
+strong consistency/writes, or any healthy replica for eventually
+consistent reads).</li>
+</ul>
+<h3 id="partition-splits-and-dynamic-range-management">Partition Splits
+and Dynamic Range Management</h3>
+<p>As tables grow in data size (exceeding 10 GB per partition) or
+provisioned throughput (exceeding 1,000 WCUs or 3,000 RCUs per
+partition), DynamoDB splits partitions automatically. The hash ring
+architecture accommodates this without rehashing the entire table:</p>
+<ul>
+<li><strong>Range Bisection:</strong> A partition range <span
+class="math inline">\([A, B]\)</span> is split into two child ranges:
+<span class="math inline">\([A, M]\)</span> and <span
+class="math inline">\([M+1, B]\)</span>, where <span
+class="math inline">\(M\)</span> is typically the midpoint of the token
+space or a point calculated to split the existing data volume
+evenly.</li>
+<li><strong>Local Data Migration:</strong> Only the data residing in the
+newly designated half <span class="math inline">\([M+1, B]\)</span> is
+transferred to a newly allocated partition group.</li>
+<li><strong>Map Propagation:</strong> The internal Partition Map Service
+updates the table metadata. The Request Routers invalidate their local
+caches and update their boundaries asynchronously, ensuring requests
+route to the new endpoints with zero downtime.</li>
+</ul>
+<p>This localized splitting preserves the integrity of the remaining
+hash ring, allowing DynamoDB to scale linearly to virtually unlimited
+throughput and storage capacity.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-partition-key-hashing-works';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

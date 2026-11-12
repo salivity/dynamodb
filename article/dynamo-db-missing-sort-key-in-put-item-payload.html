@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Missing Sort Key in PutItem Payload - dynamodb</title>
+    <meta name="description" content="When performing a PutItem operation on an Amazon DynamoDB table configured with a composite primary key, omitting the sort key attribute from the payload will cause the request to fail immediately. DynamoDB strictly requires all primary key attributes to">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-missing-sort-key-in-put-item-payload">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Missing Sort Key in PutItem Payload - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-missing-sort-key-in-put-item-payload" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When performing a PutItem operation on an Amazon DynamoDB table configured with a composite primary key, omitting the sort key attribute from the payload will cause the request to fail immediately. DynamoDB strictly requires all primary key attributes to" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-missing-sort-key-in-putitem-payload">DynamoDB Missing
+Sort Key in PutItem Payload</h1>
+<p>When performing a <code>PutItem</code> operation on an Amazon
+DynamoDB table configured with a composite primary key, omitting the
+sort key attribute from the payload will cause the request to fail
+immediately. DynamoDB strictly requires all primary key attributes to be
+present in write payloads, and a missing sort key results in a
+<code>ValidationException</code> without modifying the table.</p>
+<h2 id="the-result-validationexception">The Result:
+ValidationException</h2>
+<p>If a table is defined with both a partition key (HASH) and a sort key
+(RANGE), any <code>PutItem</code> API call missing the sort key
+attribute will be rejected by DynamoDB. The service returns a
+<code>400 Bad Request</code> HTTP status code accompanied by a
+<code>ValidationException</code>.</p>
+<p>The returned error message typically states:</p>
+<pre class="text"><code>ValidationException: One of the required keys was not given a value</code></pre>
+<p>Because DynamoDB evaluates the primary key structure before executing
+the write, the operation is completely synchronous and atomic in its
+failure. No partial item is written, and no other attributes in the
+payload are stored.</p>
+<h2 id="why-dynamodb-enforces-the-sort-key">Why DynamoDB Enforces the
+Sort Key</h2>
+<p>In DynamoDB, a primary key uniquely identifies every item in a table.
+Tables can use one of two primary key schemas:</p>
+<ol type="1">
+<li><strong>Simple Primary Key:</strong> Consists solely of a partition
+key.</li>
+<li><strong>Composite Primary Key:</strong> Consists of a partition key
+and a sort key.</li>
+</ol>
+<p>For tables using a composite key, DynamoDB stores physical items
+grouped by the partition key and sorted by the sort key within that
+partition. The combination of both keys forms the unique identifier for
+the item. DynamoDB does not provide automatic generation, null
+fallbacks, or default values for missing primary key attributes. Without
+the sort key, DynamoDB cannot determine the item's identity, detect
+whether it should overwrite an existing record, or place it in the
+underlying storage partition.</p>
+<h2 id="how-to-prevent-and-handle-the-error">How to Prevent and Handle
+the Error</h2>
+<p>To avoid a <code>ValidationException</code> during
+<code>PutItem</code> requests:</p>
+<ul>
+<li><strong>Validate the Payload Schema:</strong> Ensure data validation
+layers (such as JSON schemas or ORM/ODM models) require both the
+partition key and sort key fields before dispatching the network request
+to DynamoDB.</li>
+<li><strong>Assign Explicit Default Values:</strong> If an item
+naturally lacks a distinct sort dimension, supply a static, recognized
+placeholder value (for example, <code>METADATA</code> or
+<code>INFO</code>) as the sort key.</li>
+<li><strong>Catch the Exception:</strong> Implement error handling in
+your application code to catch <code>ValidationException</code> or the
+specific SDK equivalent (such as <code>DynamoDbException</code> or
+<code>ClientError</code>) to log the missing attribute and handle the
+failure gracefully.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-missing-sort-key-in-put-item-payload';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

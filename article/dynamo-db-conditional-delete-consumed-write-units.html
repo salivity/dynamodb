@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Conditional Delete Consumed Write Units - dynamodb</title>
+    <meta name="description" content="When executing a conditional delete in Amazon DynamoDB, consumed Write Capacity Units (WCUs) are determined by both the outcome of the condition check and the size of the targeted item. Regardless of whether the condition succeeds or fails, DynamoDB consu">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-conditional-delete-consumed-write-units">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Conditional Delete Consumed Write Units - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-conditional-delete-consumed-write-units" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When executing a conditional delete in Amazon DynamoDB, consumed Write Capacity Units (WCUs) are determined by both the outcome of the condition check and the size of the targeted item. Regardless of whether the condition succeeds or fails, DynamoDB consu" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-conditional-delete-consumed-write-units">DynamoDB
+Conditional Delete Consumed Write Units</h1>
+<p>When executing a conditional delete in Amazon DynamoDB, consumed
+Write Capacity Units (WCUs) are determined by both the outcome of the
+condition check and the size of the targeted item. Regardless of whether
+the condition succeeds or fails, DynamoDB consumes write capacity to
+evaluate the request. This guide breaks down the exact rules DynamoDB
+uses to meter consumed write capacity for conditional delete requests
+under different scenarios.</p>
+<h3 id="baseline-write-capacity-unit-wcu-calculation">Baseline Write
+Capacity Unit (WCU) Calculation</h3>
+<p>For standard provisioned tables, one Write Capacity Unit (WCU)
+represents one write per second for an item up to 1 KB in size. Any item
+larger than 1 KB is rounded up to the nearest 1 KB multiple. On-demand
+capacity mode calculates write request units (WRUs) using the exact same
+item size rules, where one WRU corresponds to one write up to 1 KB.</p>
+<h3
+id="scenario-1-the-condition-evaluates-to-true-successful-delete">Scenario
+1: The Condition Evaluates to True (Successful Delete)</h3>
+<p>When the conditional expression evaluates to true, DynamoDB removes
+the item from the table.</p>
+<ul>
+<li><strong>Consumed Capacity:</strong> DynamoDB charges WCUs based on
+the full pre-existing size of the item being deleted.</li>
+<li><strong>Calculation:</strong> The size of the item (attributes and
+attribute names) is rounded up to the next 1 KB increment.</li>
+<li><strong>Example:</strong> Deleting a 2.3 KB item consumes 3
+WCUs.</li>
+<li><strong>Secondary Indexes:</strong> If the item contains attributes
+that are projected into Global Secondary Indexes (GSIs), DynamoDB also
+consumes write capacity on each affected GSI to delete the corresponding
+index entries.</li>
+</ul>
+<h3
+id="scenario-2-the-condition-evaluates-to-false-item-exists">Scenario 2:
+The Condition Evaluates to False (Item Exists)</h3>
+<p>If the targeted item exists in the table but does not satisfy the
+specified <code>ConditionExpression</code>, DynamoDB rejects the
+operation and throws a <code>ConditionalCheckFailedException</code>.</p>
+<ul>
+<li><strong>Consumed Capacity:</strong> DynamoDB still consumes write
+capacity because it had to read and evaluate the item to perform the
+conditional write operation.</li>
+<li><strong>Calculation:</strong> The consumed write capacity equals the
+size of the existing item evaluated, rounded up to the nearest 1 KB
+boundary.</li>
+<li><strong>Example:</strong> Attempting to conditionally delete a 3.7
+KB item where the condition fails consumes 4 WCUs.</li>
+<li><strong>Secondary Indexes:</strong> Because the item was not
+deleted, no GSIs are modified, and zero capacity is consumed on
+secondary indexes.</li>
+</ul>
+<h3
+id="scenario-3-the-condition-evaluates-to-false-item-does-not-exist">Scenario
+3: The Condition Evaluates to False (Item Does Not Exist)</h3>
+<p>If you attempt a conditional delete on an item where the primary key
+does not exist in the table:</p>
+<ul>
+<li><strong>Consumed Capacity:</strong> DynamoDB cannot evaluate
+existing item data, but it still expends resources verifying that the
+item is missing against the condition.</li>
+<li><strong>Calculation:</strong> DynamoDB consumes a baseline of 1 WCU
+(or 1 WRU in on-demand mode).</li>
+<li><strong>Secondary Indexes:</strong> No index capacity is
+consumed.</li>
+</ul>
+<h3 id="scenario-4-conditional-deletes-in-transactions">Scenario 4:
+Conditional Deletes in Transactions</h3>
+<p>If a conditional delete is executed as part of a
+<code>TransactWriteItems</code> operation:</p>
+<ul>
+<li>DynamoDB performs transactional operations using two-phase commits,
+which doubles the write capacity cost.</li>
+<li>A successful conditional delete consumes 2 WCUs per 1 KB of item
+size.</li>
+<li>If a transaction is canceled due to a failed conditional check
+within the transaction, write capacity units are consumed based on the
+size of the evaluated items multiplied by two.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-conditional-delete-consumed-write-units';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

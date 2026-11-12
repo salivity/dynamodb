@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Item Creation During Write Auto Scaling - dynamodb</title>
+    <meta name="description" content="When Amazon DynamoDB auto scaling actively adjusts provisioned write capacity, item creation requests are evaluated strictly against the table&#39;s currently available capacity rather than the pending target capacity. Because DynamoDB auto scaling uses Cloud">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-item-creation-during-write-auto-scaling">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Item Creation During Write Auto Scaling - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-item-creation-during-write-auto-scaling" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When Amazon DynamoDB auto scaling actively adjusts provisioned write capacity, item creation requests are evaluated strictly against the table&#39;s currently available capacity rather than the pending target capacity. Because DynamoDB auto scaling uses Cloud" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-item-creation-during-write-auto-scaling">DynamoDB Item
+Creation During Write Auto Scaling</h1>
+<p>When Amazon DynamoDB auto scaling actively adjusts provisioned write
+capacity, item creation requests are evaluated strictly against the
+table's currently available capacity rather than the pending target
+capacity. Because DynamoDB auto scaling uses CloudWatch alarms and
+Application Auto Scaling to adjust limits asynchronously, changes are
+not instantaneous. If item creation rates surge while scaling is
+underway, DynamoDB absorbs the excess traffic using burst capacity; if
+burst capacity is depleted, it rejects incoming write requests with a
+<code>ProvisionedThroughputExceededException</code>, requiring
+client-side retry mechanisms to manage the load until the new capacity
+is active.</p>
+<h3 id="the-asynchronous-nature-of-auto-scaling">The Asynchronous Nature
+of Auto Scaling</h3>
+<p>DynamoDB Auto Scaling does not instantly increase Write Capacity
+Units (WCUs). When write traffic spikes, the following sequence
+occurs:</p>
+<ol type="1">
+<li><strong>Metric Aggregation:</strong> CloudWatch collects consumed
+capacity metrics over consecutive evaluation periods (typically taking
+several minutes).</li>
+<li><strong>Alarm Trigger:</strong> Once sustained high utilization
+breaches the target threshold, CloudWatch triggers an Application Auto
+Scaling policy.</li>
+<li><strong>Capacity Update:</strong> DynamoDB asynchronously allocates
+additional partitions or provisioned throughput to the table.</li>
+</ol>
+<p>During this transition period—which can take several minutes—the
+table continues operating under its existing provisioned WCU limit.
+DynamoDB does not maintain an internal, server-side queue for writes
+awaiting scale-up completion.</p>
+<h3 id="the-role-of-burst-capacity">The Role of Burst Capacity</h3>
+<p>To handle short-term spikes during the auto scaling lag, DynamoDB
+utilizes built-in burst capacity. The service automatically stores
+unused capacity from quiet periods for up to 300 seconds (5
+minutes).</p>
+<p>When you issue write operations like <code>PutItem</code> or
+<code>BatchWriteItem</code> that exceed the current provisioned WCUs,
+DynamoDB automatically consumes this burst reserve. If the scale-up
+event finishes before the burst capacity is exhausted, all item creation
+requests succeed seamlessly with no observable latency impact or
+errors.</p>
+<h3 id="request-throttling">Request Throttling</h3>
+<p>If write demand exceeds the provisioned WCUs and completely drains
+the 5-minute burst pool before auto scaling finishes provisioning higher
+limits, DynamoDB begins throttling item creation.</p>
+<ul>
+<li>The service immediately returns a
+<code>ProvisionedThroughputExceededException</code> (HTTP status code
+400).</li>
+<li>Throttling occurs on a per-request basis and does not corrupt or
+partially write single-item transactions.</li>
+<li>The table remains fully available; it simply rejects the volume of
+requests exceeding the current throughput boundary.</li>
+</ul>
+<h3 id="handling-writes-on-the-client-side">Handling Writes on the
+Client Side</h3>
+<p>Because DynamoDB rejects excess writes rather than holding them, the
+client application is responsible for managing the traffic during active
+scaling adjustments:</p>
+<ul>
+<li><strong>SDK Exponential Backoff:</strong> The standard AWS SDKs
+include built-in retry logic that uses exponential backoff and jitter.
+When an item creation request encounters a
+<code>ProvisionedThroughputExceededException</code>, the SDK
+automatically pauses and retries the write, often allowing time for
+burst capacity to replenish or auto scaling to finish.</li>
+<li><strong>Dead-Letter Queues (DLQs) and Buffers:</strong> For
+high-throughput ingestion pipelines, decoupling write operations using
+an intermediate buffer (such as Amazon SQS or Amazon Kinesis) ensures
+that unwritten items are retained and processed once DynamoDB finishes
+increasing provisioned write capacity.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-item-creation-during-write-auto-scaling';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

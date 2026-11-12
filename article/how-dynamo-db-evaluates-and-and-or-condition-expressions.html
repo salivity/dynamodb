@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Evaluates AND and OR Condition Expressions - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB allows developers to enforce granular write conditions using boolean operators like AND and OR. This article explains how DynamoDB parses and evaluates these compound condition expressions, detailing operator precedence, grouping rules, ev">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-and-and-or-condition-expressions">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Evaluates AND and OR Condition Expressions - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-and-and-or-condition-expressions" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB allows developers to enforce granular write conditions using boolean operators like AND and OR. This article explains how DynamoDB parses and evaluates these compound condition expressions, detailing operator precedence, grouping rules, ev" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-evaluates-and-and-or-condition-expressions">How
+DynamoDB Evaluates AND and OR Condition Expressions</h1>
+<p>Amazon DynamoDB allows developers to enforce granular write
+conditions using boolean operators like <code>AND</code> and
+<code>OR</code>. This article explains how DynamoDB parses and evaluates
+these compound condition expressions, detailing operator precedence,
+grouping rules, evaluation order, and how missing attributes impact
+conditional logic during write, update, or delete operations.</p>
+<h2 id="operator-precedence-in-dynamodb">Operator Precedence in
+DynamoDB</h2>
+<p>When evaluating multiple conditions within a
+<code>ConditionExpression</code>, DynamoDB strictly adheres to standard
+boolean operator precedence:</p>
+<ol type="1">
+<li><strong>Parentheses <code>()</code></strong>: Any expressions
+wrapped in parentheses are evaluated first, from the innermost set to
+the outermost set.</li>
+<li><strong><code>NOT</code></strong>: Unary negation is evaluated
+next.</li>
+<li><strong><code>AND</code></strong>: Conjunction operations are
+evaluated before disjunctions.</li>
+<li><strong><code>OR</code></strong>: Disjunction operations have the
+lowest precedence.</li>
+</ol>
+<p>When operators have equal precedence (such as multiple
+<code>AND</code> clauses chained together), DynamoDB evaluates them from
+left to right.</p>
+<h3 id="example-of-precedence-in-action">Example of Precedence in
+Action</h3>
+<p>Consider the following unparenthesized expression:</p>
+<pre class="text"><code>attribute_exists(userId) OR age &gt; :minAge AND status = :active</code></pre>
+<p>Because <code>AND</code> takes precedence over <code>OR</code>,
+DynamoDB groups and evaluates the expression as:</p>
+<pre class="text"><code>attribute_exists(userId) OR (age &gt; :minAge AND status = :active)</code></pre>
+<p>The operation will succeed if <code>attribute_exists(userId)</code>
+is true, regardless of what <code>age</code> or <code>status</code>
+evaluate to. To alter this evaluation order, explicit parentheses must
+be used:</p>
+<pre class="text"><code>(attribute_exists(userId) OR age &gt; :minAge) AND status = :active</code></pre>
+<h2 id="boolean-logic-and-short-circuit-evaluation">Boolean Logic and
+Short-Circuit Evaluation</h2>
+<p>DynamoDB evaluates condition expressions against the existing item
+stored in the table immediately before executing a write or update. The
+entire compound condition must resolve to a single boolean
+<code>true</code> value for the operation to proceed. If it resolves to
+<code>false</code>, the operation aborts and returns a
+<code>ConditionalCheckFailedException</code>.</p>
+<p>DynamoDB uses standard short-circuit evaluation logic:</p>
+<ul>
+<li><strong><code>AND</code> Logic</strong>: If the first operand
+evaluates to <code>false</code>, DynamoDB knows the entire
+<code>AND</code> block cannot be satisfied.</li>
+<li><strong><code>OR</code> Logic</strong>: If the first operand
+evaluates to <code>true</code>, DynamoDB knows the entire
+<code>OR</code> block is satisfied.</li>
+</ul>
+<p>Even with short-circuiting, all attribute names and values referenced
+in the expression must still be validly formed and defined in
+<code>ExpressionAttributeNames</code> or
+<code>ExpressionAttributeValues</code>.</p>
+<h2
+id="handling-non-existent-attributes-in-compound-expressions">Handling
+Non-Existent Attributes in Compound Expressions</h2>
+<p>A common source of errors in compound DynamoDB condition expressions
+is how missing attributes are treated:</p>
+<ul>
+<li>If an expression references an attribute that does not exist on the
+targeted item (e.g., <code>score &gt; :minScore</code>), that individual
+condition evaluates to <code>false</code>.</li>
+<li>In an <code>AND</code> chain, if any condition checks a missing
+attribute without using <code>attribute_not_exists()</code>, the entire
+<code>AND</code> expression resolves to <code>false</code>.</li>
+<li>In an <code>OR</code> chain, a missing attribute evaluating to
+<code>false</code> does not automatically fail the request; the
+operation can still succeed if the alternate condition evaluates to
+<code>true</code>.</li>
+</ul>
+<p>For example, to safely update an item whether an attribute exists or
+not, you can combine checks using <code>OR</code>:</p>
+<pre class="text"><code>attribute_not_exists(viewCount) OR viewCount &lt; :maxViews</code></pre>
+<p>If <code>viewCount</code> does not exist, the first clause resolves
+to <code>true</code>, satisfying the <code>OR</code> statement and
+allowing the write to succeed.</p>
+<h2 id="expression-constraints-and-limits">Expression Constraints and
+Limits</h2>
+<p>When constructing complex logic trees with <code>AND</code> and
+<code>OR</code>, keep the following constraints in mind:</p>
+<ul>
+<li><strong>Nesting Depth</strong>: DynamoDB allows expressions to be
+nested up to a depth of 100.</li>
+<li><strong>Expression Length</strong>: The maximum size of an
+individual condition expression string is 4 KB.</li>
+<li><strong>Consumed Capacity</strong>: Conditional writes consume write
+capacity units (WCUs) regardless of whether the condition succeeds or
+fails. DynamoDB reads the existing item first to evaluate the condition
+expression before executing the modification.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-evaluates-and-and-or-condition-expressions';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

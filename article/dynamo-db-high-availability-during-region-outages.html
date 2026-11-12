@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB High Availability During Region Outages - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB Global Tables provide a fully managed, multi-region, active-active database solution designed to deliver continuous uptime and disaster recovery for mission-critical applications. By automatically replicating data across multiple designate">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-high-availability-during-region-outages">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB High Availability During Region Outages - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-high-availability-during-region-outages" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB Global Tables provide a fully managed, multi-region, active-active database solution designed to deliver continuous uptime and disaster recovery for mission-critical applications. By automatically replicating data across multiple designate" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-high-availability-during-region-outages">DynamoDB High
+Availability During Region Outages</h1>
+<p>Amazon DynamoDB Global Tables provide a fully managed, multi-region,
+active-active database solution designed to deliver continuous uptime
+and disaster recovery for mission-critical applications. By
+automatically replicating data across multiple designated AWS regions,
+Global Tables ensure that if an entire AWS region experiences an outage,
+applications can seamlessly redirect read and write workloads to healthy
+replicas in other regions with minimal latency impact and no loss of
+availability.</p>
+<h3 id="multi-region-active-active-replication">Multi-Region
+Active-Active Replication</h3>
+<p>DynamoDB Global Tables operate on an active-active model, meaning
+every replica table in every participating region can serve both read
+and write requests locally. When a client performs a write operation in
+one region, DynamoDB automatically captures the change using internal
+storage engine streams and asynchronously propagates the update to all
+other replica regions. Under normal operating conditions, this
+replication typically completes in less than a second. Because every
+region maintains an independent, fully functional copy of the dataset,
+no single region serves as a bottleneck or single point of failure.</p>
+<h3 id="client-side-redirection-and-failover-routing">Client-Side
+Redirection and Failover Routing</h3>
+<p>DynamoDB relies on the client application or network-routing layers
+to detect regional degradation and switch traffic. Tools such as Amazon
+Route 53 health checks, AWS Application Recovery Controller (ARC), or
+the AWS SDK with multi-region retry capabilities monitor regional
+health. When monitoring tools detect that an entire region is
+unreachable or experiencing elevated error rates, DNS records or
+application endpoints automatically update to route incoming traffic to
+the nearest surviving replica region. Because the replica is already
+actively accepting writes, there is no need for a complex database
+failover sequence or promotion of a standby instance.</p>
+<h3 id="conflict-resolution-via-last-writer-wins">Conflict Resolution
+via Last-Writer-Wins</h3>
+<p>In an active-active setup, conflicting updates can occur,
+particularly during network partitions or regional failovers. DynamoDB
+handles this using a native "Last-Writer-Wins" reconciliation mechanism.
+DynamoDB attaches an internal timestamp to every update. If conflicting
+writes occur across different regions before a failover completes,
+DynamoDB evaluates the timestamps and persists the most recent write
+across all replicas. This deterministic approach ensures that all
+surviving regions maintain a consistent state without requiring manual
+conflict resolution logic.</p>
+<h3 id="partition-isolation-and-outage-containment">Partition Isolation
+and Outage Containment</h3>
+<p>Within each AWS region, DynamoDB tables are partitioned across
+multiple Availability Zones (AZs) by default. The replication engine
+decoupled across regions ensures that failures inside one region—whether
+hardware failure, network disconnection, or data-center-level
+disruption—remain isolated. The storage nodes, partition routers, and
+replication endpoints of surviving regions continue running
+independently, completely insulated from the degraded region’s
+infrastructure.</p>
+<h3 id="post-outage-recovery-and-catch-up">Post-Outage Recovery and
+Catch-Up</h3>
+<p>When the failed region comes back online, DynamoDB Global Tables
+automatically initiate recovery without administrative intervention. The
+replication engine tracks the replication watermarks and begins
+replaying missed updates to bring the recovered region up to date.
+During this catch-up phase, the recovered region remains accessible for
+reads and writes, progressively catching up with recent transactions
+until global data consistency is fully restored.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-high-availability-during-region-outages';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

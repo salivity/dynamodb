@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Query Result Continuation - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB limits query result sizes to 1 MB of data or a specified limit, requiring pagination to retrieve large datasets across multiple requests. To resume a query from where the previous operation stopped, DynamoDB uses the ExclusiveStartKey para">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-query-result-continuation">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB Query Result Continuation - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-query-result-continuation" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB limits query result sizes to 1 MB of data or a specified limit, requiring pagination to retrieve large datasets across multiple requests. To resume a query from where the previous operation stopped, DynamoDB uses the ExclusiveStartKey para" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-query-result-continuation">DynamoDB Query Result
+Continuation</h1>
+<p>Amazon DynamoDB limits query result sizes to 1 MB of data or a
+specified limit, requiring pagination to retrieve large datasets across
+multiple requests. To resume a query from where the previous operation
+stopped, DynamoDB uses the <code>ExclusiveStartKey</code> parameter.
+This guide explains how <code>ExclusiveStartKey</code> works, how it
+pairs with <code>LastEvaluatedKey</code>, and how to implement it to
+fetch paginated results efficiently.</p>
+<h3 id="the-role-of-exclusivestartkey">The Role of
+<code>ExclusiveStartKey</code></h3>
+<p>The <code>ExclusiveStartKey</code> parameter dictates the primary key
+of the item from which DynamoDB should begin evaluating results. When
+supplied in a <code>Query</code> or <code>Scan</code> request, DynamoDB
+starts reading items immediately <em>after</em> the item specified by
+this key. It prevents duplicate reads by excluding the item itself from
+the new result set.</p>
+<h3 id="how-pagination-works-in-dynamodb">How Pagination Works in
+DynamoDB</h3>
+<p>DynamoDB query continuation follows a two-part request-and-response
+cycle:</p>
+<ol type="1">
+<li><strong>Receive <code>LastEvaluatedKey</code></strong>: When a query
+has more matching items than can be returned in a single response, the
+response object includes a <code>LastEvaluatedKey</code>. This key
+contains the partition key (and sort key, if applicable) of the last
+item processed.</li>
+<li><strong>Pass as <code>ExclusiveStartKey</code></strong>: In the
+subsequent request, set the <code>ExclusiveStartKey</code> parameter
+equal to the <code>LastEvaluatedKey</code> from the prior response.</li>
+<li><strong>Repeat Until Completion</strong>: Continue this loop until
+the response no longer contains a <code>LastEvaluatedKey</code>,
+indicating that all matching records have been retrieved.</li>
+</ol>
+<h3 id="key-considerations">Key Considerations</h3>
+<ul>
+<li><strong>Key Structure</strong>: The value assigned to
+<code>ExclusiveStartKey</code> must match the primary key schema of the
+table or secondary index being queried. For tables with a composite
+primary key, both the partition key and sort key attributes must be
+provided.</li>
+<li><strong>Filter Expressions</strong>: DynamoDB applies a
+<code>FilterExpression</code> <em>after</em> reading items. If a query
+returns an empty list of items but still contains a
+<code>LastEvaluatedKey</code>, the operation must continue using that
+key until <code>LastEvaluatedKey</code> is absent.</li>
+<li><strong>Stateless Pagination</strong>: Because
+<code>ExclusiveStartKey</code> contains actual primary key values rather
+than an offset or cursor index, pagination remains stable and
+deterministic even if other items are inserted or removed elsewhere in
+the table.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-query-result-continuation';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

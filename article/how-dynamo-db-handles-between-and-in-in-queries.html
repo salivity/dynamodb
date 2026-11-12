@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Handles BETWEEN and IN in Queries - dynamodb</title>
+    <meta name="description" content="This article provides an overview of how Amazon DynamoDB processes complex comparison operators, specifically BETWEEN and IN, during query operations. It explains the architectural mechanics behind key condition expressions versus filter expressions, deta">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-between-and-in-in-queries">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Handles BETWEEN and IN in Queries - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-between-and-in-in-queries" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="This article provides an overview of how Amazon DynamoDB processes complex comparison operators, specifically BETWEEN and IN, during query operations. It explains the architectural mechanics behind key condition expressions versus filter expressions, deta" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-handles-between-and-in-in-queries">How DynamoDB
+Handles BETWEEN and IN in Queries</h1>
+<p>This article provides an overview of how Amazon DynamoDB processes
+complex comparison operators, specifically <code>BETWEEN</code> and
+<code>IN</code>, during query operations. It explains the architectural
+mechanics behind key condition expressions versus filter expressions,
+detailing where these operators are permitted, how DynamoDB evaluates
+them under the hood, and how their usage directly impacts query
+performance, pagination, and Read Capacity Unit (RCU) consumption.</p>
+<h3 id="the-two-stage-query-architecture">The Two-Stage Query
+Architecture</h3>
+<p>To understand how DynamoDB handles comparison operators, you must
+distinguish between the two distinct processing phases of a
+<code>Query</code> operation:</p>
+<ol type="1">
+<li><strong>Key Condition Evaluation (Storage Layer):</strong> DynamoDB
+locates the target partition using the partition key and then navigates
+the physical storage index using the sort key. This step determines
+which physical items are read from disk into memory and directly
+dictates RCU consumption.</li>
+<li><strong>Filter Expression Evaluation (Compute Layer):</strong> Once
+items are read into memory, DynamoDB applies any specified
+<code>FilterExpression</code> rules to eliminate unwanted items before
+returning the payload to the client. This step does not reduce read
+costs.</li>
+</ol>
+<p>Because of this two-stage model, operators behave very differently
+depending on whether they are placed in the
+<code>KeyConditionExpression</code> or the
+<code>FilterExpression</code>.</p>
+<h3 id="how-dynamodb-processes-the-between-operator">How DynamoDB
+Processes the BETWEEN Operator</h3>
+<p>The <code>BETWEEN</code> operator evaluates whether an attribute
+value falls inclusively within a specified lower and upper bound
+(<code>attribute BETWEEN :val1 AND :val2</code>).</p>
+<h4 id="in-key-condition-expressions">In Key Condition Expressions</h4>
+<p>DynamoDB natively supports <code>BETWEEN</code> on the sort key in a
+<code>KeyConditionExpression</code>. When executed:</p>
+<ul>
+<li><strong>Index Traversal:</strong> Because sort keys are stored in
+sorted order within a partition (typically using a B-tree-like
+structure), DynamoDB quickly locates the lower bound and reads
+contiguously until it hits the upper bound.</li>
+<li><strong>Cost Efficiency:</strong> Only items falling within the
+<code>BETWEEN</code> range are read from storage. RCUs are calculated
+strictly based on the combined size of the items within that range.</li>
+<li><strong>Data Types:</strong> <code>BETWEEN</code> works on numbers,
+strings, and binary attributes, sorting based on UTF-8 binary encoding
+for strings or numerical value for numbers.</li>
+</ul>
+<h4 id="in-filter-expressions">In Filter Expressions</h4>
+<p>When <code>BETWEEN</code> is used in a <code>FilterExpression</code>,
+it can target any attribute, whether it is part of the primary key or a
+non-key attribute:</p>
+<ul>
+<li><strong>Post-Read Execution:</strong> DynamoDB reads all items
+matching the <code>KeyConditionExpression</code> into memory first.</li>
+<li><strong>Filtering:</strong> DynamoDB evaluates the condition in
+memory and discards items outside the range.</li>
+<li><strong>Cost Impact:</strong> You are billed for reading all
+matching items from the key condition phase, regardless of how many
+items the <code>BETWEEN</code> filter discards.</li>
+</ul>
+<h3 id="how-dynamodb-processes-the-in-operator">How DynamoDB Processes
+the IN Operator</h3>
+<p>The <code>IN</code> operator checks whether an attribute matches any
+value in a designated list
+(<code>attribute IN (:val1, :val2, ...)</code>).</p>
+<h4 id="in-key-condition-expressions-not-supported">In Key Condition
+Expressions (Not Supported)</h4>
+<p>DynamoDB <strong>does not support</strong> the <code>IN</code>
+operator in a <code>KeyConditionExpression</code>.</p>
+<p>A query must evaluate a single contiguous range within a single
+partition. An <code>IN</code> list represents discrete, non-contiguous
+lookup points, which the underlying storage engine cannot process in a
+single contiguous index scan. To achieve the effect of an
+<code>IN</code> operator on key attributes:</p>
+<ul>
+<li><strong>Parallel Queries:</strong> Execute multiple distinct
+<code>Query</code> operations in parallel—one for each item in the
+list—and merge the results in your application code.</li>
+<li><strong>BatchGetItem:</strong> If you know both the partition key
+and the sort key, use <code>BatchGetItem</code> instead of a query to
+retrieve multiple discrete items in a single request.</li>
+</ul>
+<h4 id="in-filter-expressions-supported">In Filter Expressions
+(Supported)</h4>
+<p>The <code>IN</code> operator is fully supported inside a
+<code>FilterExpression</code>:</p>
+<ul>
+<li><strong>Evaluation:</strong> DynamoDB fetches the data via the
+partition key and sort key constraints, loads the results into memory,
+and performs an in-memory linear or set-membership scan to match the
+attribute against the <code>IN</code> list.</li>
+<li><strong>Size Limits:</strong> An <code>IN</code> operator can
+contain up to 100 values in a single expression.</li>
+<li><strong>Cost Impact:</strong> As with all filter expressions, you
+are billed for reading the entire dataset determined by the key
+condition, not just the items that match the <code>IN</code>
+criteria.</li>
+</ul>
+<h3 id="impact-on-pagination-and-limits">Impact on Pagination and
+Limits</h3>
+<p>When using <code>BETWEEN</code> or <code>IN</code> within filter
+expressions, DynamoDB enforces its standard 1 MB limit before evaluating
+the filter:</p>
+<ul>
+<li>DynamoDB reads items until it hits the 1 MB data limit or finishes
+the partition.</li>
+<li>It applies the <code>FilterExpression</code> (<code>BETWEEN</code>
+or <code>IN</code>).</li>
+<li>It returns the filtered items along with a
+<code>LastEvaluatedKey</code>.</li>
+</ul>
+<p>If the filter condition rejects all items within that 1 MB slice,
+DynamoDB returns an empty <code>Items</code> array alongside a
+<code>LastEvaluatedKey</code>. Applications must implement pagination
+logic to continue querying using the <code>ExclusiveStartKey</code>
+until no <code>LastEvaluatedKey</code> is returned.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-handles-between-and-in-in-queries';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

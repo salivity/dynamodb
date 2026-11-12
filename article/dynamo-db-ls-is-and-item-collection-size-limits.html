@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB LSIs and Item Collection Size Limits - dynamodb</title>
+    <meta name="description" content="When designing an Amazon DynamoDB schema, creating a Local Secondary Index (LSI) imposes a strict 10 GB size limit on any single item collection. An item collection consists of all the items in a table and its LSIs that share the same partition key value.">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/dynamo-db-ls-is-and-item-collection-size-limits">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="DynamoDB LSIs and Item Collection Size Limits - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/dynamo-db-ls-is-and-item-collection-size-limits" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="When designing an Amazon DynamoDB schema, creating a Local Secondary Index (LSI) imposes a strict 10 GB size limit on any single item collection. An item collection consists of all the items in a table and its LSIs that share the same partition key value." />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="dynamodb-lsis-and-item-collection-size-limits">DynamoDB LSIs and
+Item Collection Size Limits</h1>
+<p>When designing an Amazon DynamoDB schema, creating a Local Secondary
+Index (LSI) imposes a strict 10 GB size limit on any single item
+collection. An item collection consists of all the items in a table and
+its LSIs that share the same partition key value. This article explores
+how this 10 GB ceiling affects data modeling, the risks of hitting write
+rejections, and strategic alternatives such as Global Secondary Indexes
+(GSIs).</p>
+<h2 id="understanding-the-10-gb-item-collection-limit">Understanding the
+10 GB Item Collection Limit</h2>
+<p>In a standard DynamoDB table with only Global Secondary Indexes or no
+secondary indexes at all, there is no limit to the amount of data that
+can share the same partition key value. However, the moment an LSI is
+added during table creation, DynamoDB enforces an item collection limit:
+the sum of the base table items and all corresponding LSI items with
+identical partition key values cannot exceed 10 GB.</p>
+<p>This 10 GB ceiling is a hard quota that AWS does not increase. It
+includes the raw data, primary keys, attribute names, and indexed
+attributes across both the base table and every LSI defined on the
+table.</p>
+<h2 id="operational-impact-write-rejections">Operational Impact: Write
+Rejections</h2>
+<p>When an item collection reaches the 10 GB boundary, DynamoDB rejects
+any subsequent <code>PutItem</code>, <code>BatchWriteItem</code>, or
+<code>UpdateItem</code> operations that attempt to add new items or
+increase the size of existing items within that collection. These
+rejected calls trigger an
+<code>ItemCollectionSizeLimitExceededException</code>.</p>
+<p>Read operations, deletes, and updates that decrease the item size
+continue to work normally. However, for write-heavy applications,
+hitting this limit effectively freezes new data ingestion for that
+specific partition key, leading to application downtime or data loss if
+not handled appropriately.</p>
+<h2 id="schema-design-implications">Schema Design Implications</h2>
+<p>The 10 GB limitation fundamentally dictates how partition keys must
+be structured:</p>
+<ul>
+<li><strong>Unbounded Growth Anti-Pattern:</strong> Modeling unbounded
+datasets with an LSI is an anti-pattern. Workloads like user activity
+logs, IoT sensor feeds, or audit trails—where items accumulate endlessly
+under an entity ID—will eventually breach the 10 GB threshold.</li>
+<li><strong>High Cardinality Requirements:</strong> Partition keys must
+have sufficiently high cardinality to guarantee that data distribution
+remains balanced. Coarse-grained partition keys (such as grouping by
+<code>Status</code> or a broad <code>Category</code>) concentrate too
+much data into a single collection, dramatically accelerating the time
+it takes to hit the limit.</li>
+<li><strong>Proactive Lifecycle Management:</strong> If LSIs are
+required for a dataset with steady writes, the schema must incorporate
+data purging strategies, such as Time to Live (TTL) or scheduled
+archiving workflows, to systematically purge older items and keep the
+collection below 10 GB.</li>
+</ul>
+<h2 id="lsis-vs-gsis-in-architecture-decisions">LSIs vs. GSIs in
+Architecture Decisions</h2>
+<p>The primary historical advantage of an LSI is support for strongly
+consistent reads, which GSIs did not traditionally offer. However, this
+consistency comes at the cost of the 10 GB boundary and the inability to
+add or delete LSIs after table creation.</p>
+<p>Global Secondary Indexes do not have item collection size limits. A
+single partition key can scale to terabytes of data across base tables
+and GSIs without size-related write rejections. Unless strong read
+consistency on secondary attributes is a non-negotiable architectural
+requirement, modern DynamoDB design favors GSIs to avoid the operational
+risk and scaling ceiling imposed by item collections.</p></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/dynamo-db-ls-is-and-item-collection-size-limits';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>

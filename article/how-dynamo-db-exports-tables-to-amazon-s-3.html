@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How DynamoDB Exports Tables to Amazon S3 - dynamodb</title>
+    <meta name="description" content="Amazon DynamoDB allows you to export full table data directly to Amazon S3 without impacting production traffic or consuming read capacity units. This article explains the underlying mechanism of DynamoDB table exports, covering the role of continuous bac">
+    <link rel="canonical" href="https://salivity.github.io/dynamodb/article/how-dynamo-db-exports-tables-to-amazon-s-3">
+    <link rel="search" type="application/opensearchdescription+xml" title="dynamodb" href="/dynamodb/opensearch.xml">
+    <link rel="icon" href="/dynamodb/favicon.ico">
+    <link rel="stylesheet" href="/dynamodb/css/style.css">
+    <link media="print" rel="stylesheet" href="/dynamodb/css/print.css">
+    <script src="/dynamodb/js/fuse.min.js"></script>
+    <script src="/dynamodb/js/script.js"></script>
+    <script id="MathJax-script" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/4.1.3/tex-chtml.min.js" defer></script>
+    <script src="/monetize/monetize.js"></script>
+    <script src="/social/social.js"></script>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="How DynamoDB Exports Tables to Amazon S3 - dynamodb" />
+    <meta property="og:url" content="https://salivity.github.io/dynamodb/article/how-dynamo-db-exports-tables-to-amazon-s-3" />
+    <meta property="og:image" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:secure_url" content="https://salivity.github.io/dynamodb/images/open-graph/default.webp" />
+    <meta property="og:image:width" content="1120" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:description" content="Amazon DynamoDB allows you to export full table data directly to Amazon S3 without impacting production traffic or consuming read capacity units. This article explains the underlying mechanism of DynamoDB table exports, covering the role of continuous bac" />
+    <link rel="manifest" href="/dynamodb/pwa/manifest.json" />
+</head>
+<body>
+    <header>
+        <a href="/dynamodb/" aria-label="Go To Home Page" title="Go To Home Page" id="logo">
+            <span>salivity.github.io/</span><span>dynamodb</span>
+        </a>
+        <nav>
+            <ul class="header-links">
+                <li><a href="/dynamodb/search" title="Search" aria-label="Go To Search Page"><svg class="svg-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14"></path></svg></a></li>
+                <li><a id="theme-toggle" title="Theme" href="javascript:void(0);" aria-label="Toggle Website Theme"></a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        
+    <div class="article-layout">
+        <aside id="profile-sidebar" class="profile-column" aria-label="Author Profile"></aside>
+        <div class="article-main-column">
+            <article><h1 id="how-dynamodb-exports-tables-to-amazon-s3">How DynamoDB Exports
+Tables to Amazon S3</h1>
+<p>Amazon DynamoDB allows you to export full table data directly to
+Amazon S3 without impacting production traffic or consuming read
+capacity units. This article explains the underlying mechanism of
+DynamoDB table exports, covering the role of continuous backups, data
+formatting options, zero-impact architecture, and how the export process
+executes from initiation to the delivery of data and manifest files in
+your target S3 bucket.</p>
+<h3 id="the-role-of-point-in-time-recovery-pitr">The Role of
+Point-in-Time Recovery (PITR)</h3>
+<p>The foundation of the DynamoDB export mechanism is Point-in-Time
+Recovery (PITR). To export table data to Amazon S3, PITR must be enabled
+on the source table.</p>
+<p>When PITR is active, DynamoDB continuously captures changes and backs
+up table data to an internal, highly durable storage tier. Rather than
+querying the live database partition nodes that handle your read and
+write requests, the export feature extracts data directly from these
+continuous system backups. This allows you to export data from any point
+in time within the preceding 35 days, down to the second.</p>
+<h3 id="zero-impact-on-table-performance-and-capacity">Zero Impact on
+Table Performance and Capacity</h3>
+<p>Because DynamoDB reads from the internal PITR backup storage rather
+than the live database tables:</p>
+<ul>
+<li><strong>No Read Capacity Units (RCU) are consumed:</strong> Your
+provisioned or on-demand read capacity remains completely
+untouched.</li>
+<li><strong>No latency spikes:</strong> Your production application
+experiences zero performance degradation or throttling during the export
+process, regardless of table size.</li>
+</ul>
+<h3 id="the-export-execution-process">The Export Execution Process</h3>
+<p>When you initiate an export via the AWS Management Console, AWS CLI,
+or the <code>ExportTableToPointInTime</code> API call, the following
+sequence takes place:</p>
+<ol type="1">
+<li><strong>Validation and Configuration:</strong> DynamoDB validates
+the target Amazon S3 bucket, permissions (IAM policies), and
+configuration parameters, including the designated point in time, data
+format (DynamoDB JSON or Amazon Ion), and encryption keys (AWS KMS or
+Amazon S3-managed keys).</li>
+<li><strong>Distributed Extraction:</strong> DynamoDB assigns an
+internal fleet of distributed workers to read the snapshot data
+corresponding to the requested timestamp. Because the extraction
+workload is distributed across multiple workers, the export can scale
+efficiently even for multi-terabyte tables.</li>
+<li><strong>Serialization and Compression:</strong> The workers
+serialize the table items into the requested format (DynamoDB JSON or
+Amazon Ion). Each data file is automatically compressed using GZIP to
+reduce network transfer time and storage footprint.</li>
+<li><strong>Writing to Amazon S3:</strong> The compressed files are
+written in parallel directly to the specified S3 bucket and prefix.</li>
+</ol>
+<h3 id="output-structure-and-manifest-files">Output Structure and
+Manifest Files</h3>
+<p>Once the data writing process completes, DynamoDB outputs a
+structured directory inside your target S3 bucket containing two main
+components:</p>
+<ul>
+<li><strong>Data Files:</strong> Located in the <code>data/</code>
+subfolder, these are the GZIP-compressed files containing the serialized
+table items.</li>
+<li><strong>Manifest Files:</strong> DynamoDB generates a
+<code>manifest-summary.json</code> file at the root of the export
+directory, along with a <code>manifest-files.json</code> file. The
+summary manifest provides metadata such as the export ARN, start and end
+times, item count, and schema details. The files manifest lists the S3
+keys and checksums for all individual data files generated, enabling
+downstream services like AWS Glue, Amazon Athena, or Amazon EMR to
+easily ingest and verify the exported data.</li>
+</ul></article>
+        <div id='disqus_thread'></div>
+        <script>
+
+            var disqus_config = function () {
+                this.page.url =         'https://salivity.github.io/dynamodb/article/how-dynamo-db-exports-tables-to-amazon-s-3';  
+                //this.page.identifier =  PAGE_IDENTIFIER; 
+            };
+            
+            (function() {
+                var d = document, s = d.createElement('script');
+                s.src = 'https://salivity-github-io.disqus.com/embed.js';
+                s.setAttribute('data-timestamp', +new Date());
+                (d.head || d.body).appendChild(s);
+            })();
+        </script>
+    
+        </div>
+    </div>
+    
+    </main>
+    <footer>
+        <nav>
+            <ul class="social-links">
+            </ul>
+        </nav>
+        <nav>
+            <ul class="footer-links">
+                <li><a href="https://smvc.dev/contact">Contact</a></li>
+                <li><a href="/dynamodb/privacy-policy">Privacy Policy</a></li>
+                <li><a href="/dynamodb/terms-and-conditions">Terms and Conditions</a></li>
+            </ul>
+        </nav>
+        <div class="copyright">
+            Copyright &copy; <span id="current-year"></span>
+        </div>
+    </footer>
+</body>
+</html>
